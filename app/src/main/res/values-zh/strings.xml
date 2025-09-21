@@ -1,0 +1,24 @@
+<resources>
+    <string name="app_name">Sunday Spotter</string>
+    <string name="map_title">拍摄地图</string>
+    <string name="camera_title">AR 相机</string>
+    <string name="onboarding_next">下一步</string>
+    <string name="onboarding_skip">跳过</string>
+    <string name="onboarding_finish">开始体验</string>
+    <string name="onboarding_headline_discover">发现你附近的经典取景地。</string>
+    <string name="onboarding_headline_capture">使用 AR 指引精准还原画面。</string>
+    <string name="onboarding_headline_share">即将上线：社区分享互联。</string>
+    <string name="settings_title">设置</string>
+    <string name="settings_large_text">启用大号文字</string>
+    <string name="settings_offline_mode">离线下载拍摄点</string>
+    <string name="settings_notifications">场景提醒</string>
+    <string name="map_loading">正在加载拍摄点…</string>
+    <string name="map_offline_mode">离线模式</string>
+    <string name="camera_permission_rationale">需要相机和运动权限来启用 AR 指引。</string>
+    <string name="spots_empty_state">暂无缓存拍摄点。联网以下载场景。</string>
+    <string name="tutorial_title">Sunday Spotter 使用指南</string>
+    <string name="tutorial_body">在地图上发现拍摄点，并用 AR 对准取景。</string>
+    <string name="community_call_to_action">敬请期待：SNS 分享</string>
+    <string name="language_picker_label">语言</string>
+    <string name="maps_api_key">YOUR_MAPS_API_KEY</string>
+</resources>

@@ -1,0 +1,24 @@
+<resources>
+    <string name="app_name">선데이 스포터</string>
+    <string name="map_title">스팟 지도</string>
+    <string name="camera_title">AR 카메라</string>
+    <string name="onboarding_next">다음</string>
+    <string name="onboarding_skip">건너뛰기</string>
+    <string name="onboarding_finish">시작하기</string>
+    <string name="onboarding_headline_discover">근처의 명장면 촬영지를 찾아보세요.</string>
+    <string name="onboarding_headline_capture">AR 안내로 장면을 정확히 담아보세요.</string>
+    <string name="onboarding_headline_share">커뮤니티와 공유하고 소통하세요.</string>
+    <string name="settings_title">설정</string>
+    <string name="settings_large_text">큰 글씨 사용</string>
+    <string name="settings_offline_mode">오프라인용 스팟 다운로드</string>
+    <string name="settings_notifications">장면 알림</string>
+    <string name="map_loading">스팟을 불러오는 중…</string>
+    <string name="map_offline_mode">오프라인 모드</string>
+    <string name="camera_permission_rationale">AR 안내를 위해 카메라와 동작 권한이 필요합니다.</string>
+    <string name="spots_empty_state">저장된 스팟이 없습니다. 연결하여 장면을 다운로드하세요.</string>
+    <string name="tutorial_title">선데이 스포터 사용 방법</string>
+    <string name="tutorial_body">지도를 따라 발견하고, AR로 장면을 맞춰보세요.</string>
+    <string name="community_call_to_action">곧 제공: SNS 공유</string>
+    <string name="language_picker_label">언어</string>
+    <string name="maps_api_key">YOUR_MAPS_API_KEY</string>
+</resources>
