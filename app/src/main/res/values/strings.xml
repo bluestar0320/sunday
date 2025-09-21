@@ -1,0 +1,24 @@
+<resources>
+    <string name="app_name">Sunday Spotter</string>
+    <string name="map_title">Spot Map</string>
+    <string name="camera_title">AR Camera</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_finish">Get Started</string>
+    <string name="onboarding_headline_discover">Discover iconic filming spots near you.</string>
+    <string name="onboarding_headline_capture">Capture scenes with AR-guided framing.</string>
+    <string name="onboarding_headline_share">Share and connect with the community.</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_large_text">Enable large text</string>
+    <string name="settings_offline_mode">Download spots for offline use</string>
+    <string name="settings_notifications">Scene alerts</string>
+    <string name="map_loading">Loading spots…</string>
+    <string name="map_offline_mode">Offline mode active</string>
+    <string name="camera_permission_rationale">Camera and motion permissions are required for AR guidance.</string>
+    <string name="spots_empty_state">No cached spots. Connect to download guided scenes.</string>
+    <string name="tutorial_title">How Sunday Spotter Works</string>
+    <string name="tutorial_body">Follow the map to discover, then switch to AR to match the shot.</string>
+    <string name="community_call_to_action">Coming soon: share to SNS</string>
+    <string name="language_picker_label">Language</string>
+    <string name="maps_api_key">YOUR_MAPS_API_KEY</string>
+</resources>

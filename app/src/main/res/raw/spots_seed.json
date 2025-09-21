@@ -1,0 +1,24 @@
+[
+  {
+    "id": "spot_gwanghwamun",
+    "title": "Gwanghwamun Gate Plaza",
+    "latitude": 37.5759,
+    "longitude": 126.9768,
+    "scene": "Historical drama climax plaza",
+    "heroPose": {
+      "bearing": 180.0,
+      "tilt": -12.0
+    }
+  },
+  {
+    "id": "spot_han_river",
+    "title": "Han River Pedestrian Bridge",
+    "latitude": 37.5311,
+    "longitude": 126.9983,
+    "scene": "Romance confession night shot",
+    "heroPose": {
+      "bearing": 45.0,
+      "tilt": -5.0
+    }
+  }
+]
