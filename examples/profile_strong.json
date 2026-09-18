@@ -1,0 +1,34 @@
+{
+  "name": "Strong example",
+  "age": 31,
+  "photos": [
+    {"kind": "face", "people": 1, "note": "taken by a friend, natural light"},
+    {"kind": "full_body", "people": 1, "note": "standing at the trailhead"},
+    {"kind": "activity", "people": 1, "note": "mid-throw at the pottery wheel"},
+    {"kind": "social", "people": 3, "note": "sister's birthday dinner"},
+    {"kind": "travel", "people": 1, "note": "ferry to Jeju"},
+    {"kind": "candid", "people": 2, "note": "laughing in a kitchen"}
+  ],
+  "prompts": [
+    {
+      "prompt": "The last time I laughed way too hard",
+      "answer": "My sourdough starter, Gerald, escaped its jar overnight and colonised a shelf. I apologised to it out loud. Tell me your worst kitchen crime."
+    },
+    {
+      "prompt": "I'll pick the topic if you start the conversation",
+      "answer": "Whether Busan or Gwangjang market does the better hangover breakfast. I've researched it twice, and I'm still willing to be wrong. Convince me."
+    },
+    {
+      "prompt": "Together we could",
+      "answer": "Hunt down the best gukbap within six blocks, then argue about the winner on the walk home. Let's start on a Saturday. Bring strong opinions."
+    }
+  ],
+  "vitals": {
+    "work": "Ceramics studio manager",
+    "education": "Hongik University",
+    "hometown": "Daegu",
+    "height": "5'9\"",
+    "location": "Seoul",
+    "dating_intentions": "Looking for a long-term relationship"
+  }
+}

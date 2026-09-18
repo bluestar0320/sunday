@@ -1,0 +1,32 @@
+{
+  "name": "Weak example",
+  "age": 28,
+  "photos": [
+    {"kind": "social", "people": 5, "sunglasses": true},
+    {"kind": "mirror", "people": 1, "selfie": true},
+    {"kind": "social", "people": 4},
+    {"kind": "social", "people": 6}
+  ],
+  "prompts": [
+    {
+      "prompt": "My most irrational fear",
+      "answer": "I love to laugh and I'm fluent in sarcasm."
+    },
+    {
+      "prompt": "My simple pleasures",
+      "answer": "Good food, good people, good times. I'm a foodie and a bit of a coffee addict."
+    },
+    {
+      "prompt": "The hallmark of a good relationship is",
+      "answer": "No drama. Swipe left if you can't hold a conversation."
+    }
+  ],
+  "vitals": {
+    "work": "Marketing",
+    "education": "",
+    "hometown": "",
+    "height": "",
+    "location": "",
+    "dating_intentions": ""
+  }
+}
