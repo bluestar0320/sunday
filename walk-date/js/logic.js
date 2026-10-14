@@ -78,16 +78,48 @@ export function rankCandidates(me, people, { maxKm = 5, sizes = SIZES, seen = []
     .sort((a, b) => b.score - a.score);
 }
 
-// 두 사람의 중간 지점에서 가장 가까운 산책 장소를 추천
-export function suggestSpots(me, other, spots, limit = 3) {
+// ---------- 산책 코스 안전도 ----------
+// 여성 이용자가 많은 만큼 "으슥한 곳"을 피하는 게 핵심.
+// 시간대별 유동인구 · 조명 · CCTV · 트인 시야 · 도움 요청 가능 거리로 판단한다.
+export const NIGHT_SLOTS = ['저녁', '밤'];
+export const CROWD_LABELS = ['인적이 드물어요', '사람이 적당히 다녀요', '사람이 많이 다녀요'];
+
+export function courseSafety(course, slot) {
+  const s = course.safety;
+  const night = NIGHT_SLOTS.includes(slot);
+  const crowd = s.crowd[slot] ?? 0;
+  const light = night ? s.lighting : 2;
+  const helpM = Math.min(s.storeM, s.policeM);
+  const checks = [
+    { key: 'crowd', ok: crowd >= 1, label: `${slot}에 ${CROWD_LABELS[crowd]}` },
+    { key: 'light', ok: light >= 1, label: night ? ['가로등이 부족한 구간이 있어요', '조명이 보통이에요', '가로등이 밝아요'][s.lighting] : '해가 떠 있는 시간대예요' },
+    { key: 'cctv', ok: s.cctv, label: s.cctv ? '방범 CCTV 설치 구간' : 'CCTV가 없는 구간이 있어요' },
+    { key: 'view', ok: s.openView, label: s.openView ? '시야가 트여 있어요' : '숲길·골목처럼 가려진 구간이 있어요' },
+    { key: 'help', ok: helpM <= 300, label: `가장 가까운 편의점·지구대 ${helpM}m` },
+  ];
+  let score = [0, 20, 35][crowd] + [0, 15, 25][light] + (s.cctv ? 15 : 0) + (s.openView ? 15 : 0) + (helpM <= 300 ? 10 : helpM <= 700 ? 5 : 0);
+  // 어두운 시간에 인적까지 드물면 점수와 무관하게 '주의'
+  const secluded = crowd === 0 && (night || !s.openView);
+  const level = secluded || score < 50 ? '주의' : score >= 75 ? '안심' : '보통';
+  return { score, level, checks, secluded };
+}
+
+// 두 사람 중간 지점 근처 코스를 안전도 우선으로 추천
+export function recommendCourses(me, other, courses, { slot, safeOnly = true, limit = 4 } = {}) {
   const mid = {
     lat: (me.location.lat + other.location.lat) / 2,
     lng: (me.location.lng + other.location.lng) / 2,
   };
-  return spots
-    .map((s) => ({ ...s, distanceKm: Math.round(distanceKm(mid, s) * 10) / 10 }))
-    .sort((a, b) => a.distanceKm - b.distanceKm)
+  const all = courses.map((c) => ({
+    ...c,
+    distanceKm: Math.round(distanceKm(mid, c) * 10) / 10,
+    safety: courseSafety(c, slot),
+  }));
+  const shown = all
+    .filter((c) => !safeOnly || c.safety.level !== '주의')
+    .sort((a, b) => (b.safety.score - b.distanceKm * 15) - (a.safety.score - a.distanceKm * 15))
     .slice(0, limit);
+  return { courses: shown, hiddenCount: safeOnly ? all.filter((c) => c.safety.level === '주의').length : 0 };
 }
 
 // 상대가 나를 이미 좋아요 했다면 매칭 성사

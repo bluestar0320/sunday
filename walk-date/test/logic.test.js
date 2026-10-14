@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  distanceKm, compatibility, rankCandidates, suggestSpots,
+  distanceKm, compatibility, rankCandidates, recommendCourses, courseSafety,
   isMutualMatch, averageRating, walkStatus,
 } from '../js/logic.js';
-import { PEOPLE, SPOTS, DEFAULT_ME } from '../js/data.js';
+import { PEOPLE, COURSES, DEFAULT_ME } from '../js/data.js';
 
 const me = {
   ...structuredClone(DEFAULT_ME),
@@ -40,10 +40,35 @@ test('rankCandidates: 성별·이미 본 사람·거리·크기 필터와 점수
   assert.equal(rankCandidates({ ...me, lookingFor: '모두' }, PEOPLE, { maxKm: 0.1 }).length, 0);
 });
 
-test('suggestSpots: 중간 지점에서 가까운 순서로 limit개', () => {
-  const spots = suggestSpots(me, PEOPLE[0], SPOTS, 3);
-  assert.equal(spots.length, 3);
-  assert.ok(spots[0].distanceKm <= spots[1].distanceKm && spots[1].distanceKm <= spots[2].distanceKm);
+const byId = (id) => COURSES.find((c) => c.id === id);
+
+test('courseSafety: 밝고 붐비는 길은 안심, 밤의 어두운 숲길·골목은 주의', () => {
+  assert.equal(courseSafety(byId('c2'), '밤').level, '안심'); // 경의선숲길: 밤에도 붐빔
+  const forest = courseSafety(byId('c8'), '밤');            // 성미산 숲길
+  assert.equal(forest.level, '주의');
+  assert.ok(forest.secluded);
+  assert.ok(forest.checks.some((k) => k.key === 'crowd' && !k.ok));
+  assert.equal(courseSafety(byId('c7'), '저녁').level, '주의'); // 조명·CCTV 없는 골목
+});
+
+test('courseSafety: 같은 코스도 시간대에 따라 달라진다', () => {
+  const park = byId('c3'); // 평화의공원: 낮엔 붐비고 밤엔 한산
+  assert.notEqual(courseSafety(park, '점심').level, '주의');
+  assert.equal(courseSafety(park, '밤').level, '주의');
+});
+
+test('recommendCourses: 안심 모드는 주의 코스를 숨기고, 끄면 보여준다', () => {
+  const other = PEOPLE[0];
+  const safe = recommendCourses(me, other, COURSES, { slot: '밤', safeOnly: true, limit: 10 });
+  assert.ok(safe.courses.length > 0);
+  assert.ok(safe.courses.every((c) => c.safety.level !== '주의'));
+  assert.ok(safe.hiddenCount > 0);
+
+  const all = recommendCourses(me, other, COURSES, { slot: '밤', safeOnly: false, limit: 10 });
+  assert.equal(all.courses.length, COURSES.length);
+  assert.equal(all.hiddenCount, 0);
+  // 안전한 코스가 위에 온다
+  assert.notEqual(all.courses[0].safety.level, '주의');
 });
 
 test('isMutualMatch / averageRating', () => {

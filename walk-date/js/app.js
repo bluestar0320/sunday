@@ -1,11 +1,13 @@
-import { PEOPLE, SPOTS, DEFAULT_ME, INTERESTS, AUTO_REPLIES } from './data.js';
+import { PEOPLE, COURSES, DEFAULT_ME, INTERESTS, AUTO_REPLIES } from './data.js';
 import {
   SIZES, ENERGY, TIME_SLOTS,
-  rankCandidates, compatibility, suggestSpots, isMutualMatch,
+  rankCandidates, compatibility, recommendCourses, courseSafety, isMutualMatch,
   averageRating, walkStatus, ageFromBirthYear,
 } from './logic.js';
+import { icon, dogArt, resizeImage, SAFETY_ICON } from './ui.js';
 
-const STORAGE_KEY = 'walkdate:v1';
+const STORAGE_KEY = 'walkdate:v2';
+const MAX_PHOTOS = 5;
 const $ = (sel, root = document) => root.querySelector(sel);
 const view = $('#view');
 
@@ -15,8 +17,8 @@ function freshState() {
     onboarded: false,
     me: structuredClone(DEFAULT_ME),
     seen: [],
-    matches: [], // { personId, matchedAt, messages: [{from, text, at, kind}], unread }
-    walks: [],   // { id, personId, spotId, datetime, slot, status: 'pending'|'confirmed'|'cancelled', review }
+    matches: [], // { personId, matchedAt, messages: [{from, text, at, kind, walkId}], unread }
+    walks: [],   // { id, personId, courseId, datetime, slot, status: 'pending'|'confirmed'|'cancelled', review }
     blocked: [],
     filters: { maxKm: 5, sizes: [...SIZES] },
   };
@@ -25,7 +27,11 @@ function freshState() {
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...freshState(), ...JSON.parse(raw) };
+    if (raw) {
+      const saved = JSON.parse(raw);
+      const base = freshState();
+      return { ...base, ...saved, me: { ...base.me, ...saved.me, dog: { ...base.me.dog, ...saved.me?.dog } } };
+    }
   } catch { /* 저장소 사용 불가 시 새 상태로 시작 */ }
   return freshState();
 }
@@ -34,53 +40,74 @@ let state = load();
 let route = { name: state.onboarded ? 'discover' : 'onboarding', step: 0 };
 
 function save() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* 무시 */ }
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    return true;
+  } catch {
+    toast('저장 공간이 부족해요. 사진 수를 줄여주세요.');
+    return false;
+  }
 }
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const person = (id) => PEOPLE.find((p) => p.id === id);
-const spot = (id) => SPOTS.find((s) => s.id === id);
+const person = (id) => (id === 'me' ? state.me : PEOPLE.find((p) => p.id === id));
+const course = (id) => COURSES.find((c) => c.id === id);
 const matchOf = (id) => state.matches.find((m) => m.personId === id);
+const photosOf = (p) => p.dog.photos || [];
+
+// 사진이 있으면 사진, 없으면 일러스트
+function media(p, i = 0) {
+  const src = photosOf(p)[i];
+  return src ? `<img class="photo" src="${src}" alt="${esc(p.dog.name)} 사진" />` : dogArt(p.art);
+}
 
 function toast(msg) {
   const t = $('#toast');
   t.textContent = msg;
   t.classList.add('show');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove('show'), 2200);
+  toast.timer = setTimeout(() => t.classList.remove('show'), 2400);
 }
 
 function openModal(html, onMount) {
   $('#modalBody').innerHTML = html;
   $('#modal').hidden = false;
+  $('#modalBody').scrollTop = 0;
   onMount?.($('#modalBody'));
 }
 function closeModal() { $('#modal').hidden = true; }
 $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
 
+const DAYS = '일월화수목금토';
 function fmtDate(iso) {
   const d = new Date(iso);
-  const days = ['일', '월', '화', '수', '목', '금', '토'];
-  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${days[d.getDay()]}) ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${DAYS[d.getDay()]}) ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-// ---------- 라우팅 ----------
+function safeBadge(level) {
+  return `<span class="safe-badge lv-${level}">${icon(level === '주의' ? 'alert' : 'shield', 13)}${level}</span>`;
+}
+
+// ---------- 라우팅 / 상단 바 ----------
 function go(name, params = {}) {
   route = { name, ...params };
   render();
 }
 
-function render() {
-  const tabs = ['discover', 'matches', 'walks', 'profile'];
-  const inTab = tabs.includes(route.name);
-  $('#tabbar').hidden = route.name === 'onboarding';
-  $('#backBtn').hidden = inTab || route.name === 'onboarding';
-  $('#filterBtn').hidden = route.name !== 'discover';
-  document.querySelectorAll('#tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === route.name));
-  updateBadge();
+function setTop(title, { back = false, actions = '' } = {}) {
+  $('#title').textContent = title;
+  $('#backBtn').hidden = !back;
+  $('#topbar').classList.toggle('has-back', back);
+  $('#topActions').innerHTML = actions;
+}
 
-  const views = { onboarding: renderOnboarding, discover: renderDiscover, matches: renderMatches, chat: renderChat, walks: renderWalks, profile: renderProfile };
-  views[route.name]();
+function render() {
+  $('#tabbar').hidden = route.name === 'onboarding';
+  document.querySelectorAll('#tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === route.name));
+  view.classList.toggle('flush', route.name === 'discover' || route.name === 'chat');
+  view.scrollTop = 0;
+  updateBadge();
+  ({ onboarding: renderOnboarding, discover: renderDiscover, matches: renderMatches, chat: renderChat, walks: renderWalks, profile: renderProfile })[route.name]();
 }
 
 function updateBadge() {
@@ -90,104 +117,167 @@ function updateBadge() {
   if (unread) btn.insertAdjacentHTML('beforeend', `<i class="badge">${unread}</i>`);
 }
 
+document.querySelectorAll('#tabbar button').forEach((b) => b.insertAdjacentHTML('afterbegin', icon(b.dataset.icon, 24)));
+$('#backBtn').innerHTML = icon('back', 24);
 $('#tabbar').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-tab]');
   if (b) go(b.dataset.tab);
 });
-$('#backBtn').addEventListener('click', () => go(route.back || 'matches'));
-$('#filterBtn').addEventListener('click', openFilters);
+$('#backBtn').addEventListener('click', () => {
+  if (route.name === 'onboarding') go('onboarding', { step: route.step - 1 });
+  else go(route.back || 'matches');
+});
 
-// ---------- 온보딩 ----------
-function renderOnboarding() {
-  $('#title').textContent = '같이걸을개';
-  const step = route.step || 0;
-  const me = state.me;
-
-  if (step === 0) {
-    view.innerHTML = `
-      <div class="onboard-hero">
-        <div class="big">🐕‍🦺💛🐩</div>
-        <h2>산책하다 만나는 인연</h2>
-        <p>어색한 카페 소개팅 대신,<br/>강아지와 함께 걷는 편안한 첫 만남.</p>
-      </div>
-      <div class="steps">
-        <div><b>🐾</b><span>우리 동네 <strong>산책 궁합</strong>이 맞는 보호자를 추천해요</span></div>
-        <div><b>💬</b><span>서로 좋아요를 누르면 <strong>매칭</strong>되어 대화할 수 있어요</span></div>
-        <div><b>📍</b><span>두 사람 중간 지점의 <strong>산책 코스</strong>로 데이트를 잡아요</span></div>
-        <div><b>⭐</b><span>산책 후 <strong>매너 평가</strong>로 안전한 커뮤니티를 만들어요</span></div>
-      </div>
-      <button class="btn" id="start">시작하기</button>`;
-    $('#start').onclick = () => go('onboarding', { step: 1 });
-    return;
-  }
-
-  if (step === 1) {
-    view.innerHTML = `
-      <div class="progress"><i style="width:50%"></i></div>
-      <h2 style="margin:0 0 4px">보호자님을 소개해 주세요</h2>
-      <p class="muted small" style="margin:0 0 18px">상대방에게 보여질 정보예요.</p>
-      ${personFields(me)}
-      <button class="btn" id="next">다음</button>`;
-    bindPersonFields();
-    $('#next').onclick = () => {
-      if (!readPersonFields()) return;
-      go('onboarding', { step: 2 });
-    };
-    return;
-  }
-
-  view.innerHTML = `
-    <div class="progress"><i style="width:100%"></i></div>
-    <h2 style="margin:0 0 4px">우리 아이를 소개해 주세요</h2>
-    <p class="muted small" style="margin:0 0 18px">산책 궁합 계산에 사용돼요.</p>
-    ${dogFields(me.dog)}
-    <div class="row">
-      <button class="btn secondary" id="prev" style="flex:1">이전</button>
-      <button class="btn" id="done" style="flex:2">산책 메이트 찾기</button>
-    </div>`;
-  bindDogFields();
-  $('#prev').onclick = () => { readDogFields(true); go('onboarding', { step: 1 }); };
-  $('#done').onclick = () => {
-    if (!readDogFields()) return;
-    state.onboarded = true;
-    save();
-    go('discover');
-    toast(`${me.dog.name}와(과) 산책할 친구를 찾아볼게요!`);
-  };
-}
-
+// ---------- 폼 토글 공통 ----------
 function segHtml(name, options, value) {
   return `<div class="seg" data-seg="${name}">${options.map((o) => `<button type="button" data-v="${esc(o)}" class="${o === value ? 'on' : ''}">${esc(o)}</button>`).join('')}</div>`;
 }
 function chipsHtml(name, options, values) {
-  return `<div class="chips" data-chips="${name}">${options.map((o) => `<button type="button" class="chip ${values.includes(o) ? 'on' : ''}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>`;
+  return `<div class="chips" data-chips="${name}">${options.map((o) => `<button type="button" class="tag ${values.includes(o) ? 'on' : ''}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>`;
 }
-function bindToggles(root = view) {
+function bindToggles(root, onChange) {
   root.querySelectorAll('[data-seg]').forEach((seg) => seg.addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
     seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    onChange?.(seg.dataset.seg, b.dataset.v);
   }));
   root.querySelectorAll('[data-chips]').forEach((c) => c.addEventListener('click', (e) => {
-    const b = e.target.closest('button'); if (b) b.classList.toggle('on');
+    const b = e.target.closest('button'); if (!b) return;
+    b.classList.toggle('on');
+    onChange?.(c.dataset.chips);
   }));
 }
 const segVal = (name, root = document) => root.querySelector(`[data-seg="${name}"] .on`)?.dataset.v;
 const chipVals = (name, root = document) => [...root.querySelectorAll(`[data-chips="${name}"] .on`)].map((b) => b.dataset.v);
 
+// ---------- 사진 업로드 ----------
+function pickFiles() {
+  return new Promise((resolve) => {
+    const input = $('#fileInput');
+    input.value = '';
+    input.onchange = () => resolve([...input.files]);
+    input.click();
+  });
+}
+
+async function addPhotos(files) {
+  const photos = state.me.dog.photos;
+  for (const f of files) {
+    if (photos.length >= MAX_PHOTOS) { toast(`사진은 최대 ${MAX_PHOTOS}장까지 올릴 수 있어요`); break; }
+    if (!f.type.startsWith('image/')) continue;
+    try {
+      photos.push(await resizeImage(f));
+      if (!save()) { photos.pop(); break; }
+    } catch {
+      toast('이미지를 읽지 못했어요');
+    }
+  }
+}
+
+function photoGridHtml() {
+  const photos = state.me.dog.photos;
+  return `<div class="photo-grid" id="photoGrid">
+    ${photos.map((src, i) => `<div class="photo-slot">
+      <img class="photo" src="${src}" alt="강아지 사진 ${i + 1}" />
+      <button class="rm" data-rm="${i}" aria-label="사진 삭제">${icon('x', 14)}</button>
+      ${i === 0 ? '<span class="main-badge">대표</span>' : `<button class="set-main" data-main="${i}">대표로</button>`}
+    </div>`).join('')}
+    ${photos.length < MAX_PHOTOS ? `<button class="photo-slot add" id="addPhoto">${icon('plus', 22)}<span>${photos.length}/${MAX_PHOTOS}</span></button>` : ''}
+  </div>`;
+}
+
+// 그리드를 다시 그리고 이벤트 연결. onChange는 사진 변경 후 호출
+function bindPhotoGrid(root, onChange) {
+  const grid = $('#photoGrid', root);
+  const rerender = () => { grid.outerHTML = photoGridHtml(); bindPhotoGrid(root, onChange); onChange?.(); };
+  grid.onclick = async (e) => {
+    const photos = state.me.dog.photos;
+    const rm = e.target.closest('[data-rm]');
+    const main = e.target.closest('[data-main]');
+    if (rm) { photos.splice(Number(rm.dataset.rm), 1); save(); rerender(); }
+    else if (main) { photos.unshift(...photos.splice(Number(main.dataset.main), 1)); save(); rerender(); }
+    else if (e.target.closest('#addPhoto')) { await addPhotos(await pickFiles()); rerender(); }
+  };
+}
+
+// ---------- 온보딩 ----------
+function progress(step) {
+  return `<div class="progress">${[1, 2, 3].map((n) => `<i class="${n <= step ? 'on' : ''}"></i>`).join('')}</div>`;
+}
+
+function renderOnboarding() {
+  const step = route.step || 0;
+  const me = state.me;
+  setTop(step === 0 ? '' : `${step} / 3`, { back: step > 0 });
+
+  if (step === 0) {
+    const [a, b] = [PEOPLE[0], PEOPLE[2]];
+    view.innerHTML = `<div class="welcome">
+      <div class="art"><div>${dogArt(a.art)}</div><div>${dogArt(b.art)}</div></div>
+      <div class="eyebrow">같이걸을개</div>
+      <h2 class="h-title">어색한 소개팅 대신,<br/>같이 걸으며 알아가요</h2>
+      <p class="h-sub" style="margin-bottom:16px">강아지 산책으로 시작하는 편안한 첫 만남</p>
+      <div class="feature"><div class="fi">${icon('heart')}</div><div><b>산책 궁합 추천</b><span>사는 곳, 산책 시간, 아이 성향이 맞는 사람</span></div></div>
+      <div class="feature"><div class="fi">${icon('shield')}</div><div><b>안심 산책 코스</b><span>밝고 사람 많은 길로만 추천해요</span></div></div>
+      <div class="feature"><div class="fi">${icon('star')}</div><div><b>매너 평가</b><span>산책 후 서로 남기는 후기로 안전하게</span></div></div>
+      <div class="bottom-cta"><button class="btn accent" id="start">시작하기</button></div>
+    </div>`;
+    $('#start').onclick = () => go('onboarding', { step: 1 });
+    return;
+  }
+
+  if (step === 1) {
+    view.innerHTML = `${progress(1)}
+      <h2 class="h-title">보호자님을 소개해 주세요</h2>
+      <p class="h-sub">매칭된 상대에게 보여지는 정보예요.</p>
+      ${personFields(me)}
+      <button class="btn" id="next">다음</button>`;
+    bindToggles(view);
+    $('#next').onclick = () => { if (readPersonFields()) go('onboarding', { step: 2 }); };
+    return;
+  }
+
+  if (step === 2) {
+    view.innerHTML = `${progress(2)}
+      <h2 class="h-title">우리 아이는 어떤 친구인가요?</h2>
+      <p class="h-sub">산책 궁합을 계산하는 데 쓰여요.</p>
+      ${dogFields(me.dog)}
+      <button class="btn" id="next">다음</button>`;
+    bindToggles(view);
+    $('#next').onclick = () => { if (readDogFields()) go('onboarding', { step: 3 }); };
+    return;
+  }
+
+  view.innerHTML = `${progress(3)}
+    <h2 class="h-title">${esc(me.dog.name)}의 사진을 올려주세요</h2>
+    <p class="h-sub">얼굴이 잘 보이는 사진일수록 매칭이 잘 돼요.<br/>첫 번째 사진이 대표 사진이 돼요. (최대 ${MAX_PHOTOS}장)</p>
+    ${photoGridHtml()}
+    <div class="notice" style="margin-top:20px">${icon('shield', 18)}<span>사람 얼굴이 크게 나온 사진, 연락처가 담긴 사진은 노출이 제한될 수 있어요.</span></div>
+    <div style="margin-top:28px"><button class="btn accent" id="done">산책 메이트 찾기</button></div>`;
+  const syncDone = () => { $('#done').disabled = state.me.dog.photos.length === 0; };
+  bindPhotoGrid(view, syncDone);
+  syncDone();
+  $('#done').onclick = () => {
+    state.onboarded = true;
+    save();
+    go('discover');
+    toast(`${me.dog.name}와(과) 산책할 친구를 찾아볼게요`);
+  };
+}
+
 function personFields(me) {
   return `
-    <div class="field"><label for="f-name">이름 (닉네임)</label><input id="f-name" maxlength="10" value="${esc(me.name)}" placeholder="예: 하늘" /></div>
-    <div class="row">
-      <div class="field" style="flex:1"><label for="f-year">출생연도</label><input id="f-year" type="number" min="1950" max="2008" value="${esc(me.birthYear)}" /></div>
-      <div class="field" style="flex:1"><label for="f-job">직업</label><input id="f-job" maxlength="16" value="${esc(me.job)}" placeholder="예: 회사원" /></div>
+    <div class="field"><label for="f-name">이름 (닉네임)</label><input class="input" id="f-name" maxlength="10" value="${esc(me.name)}" placeholder="예: 하늘" /></div>
+    <div class="two">
+      <div class="field"><label for="f-year">출생연도</label><input class="input" id="f-year" type="number" inputmode="numeric" min="1950" max="2008" value="${esc(me.birthYear)}" /></div>
+      <div class="field"><label for="f-job">직업</label><input class="input" id="f-job" maxlength="16" value="${esc(me.job)}" placeholder="예: 회사원" /></div>
     </div>
     <div class="field"><label>성별</label>${segHtml('gender', ['여성', '남성'], me.gender)}</div>
     <div class="field"><label>만나고 싶은 사람</label>${segHtml('lookingFor', ['남성', '여성', '모두'], me.lookingFor)}</div>
-    <div class="field"><label>선호 산책 시간</label>${chipsHtml('walkTimes', TIME_SLOTS, me.walkTimes)}</div>
+    <div class="field"><label>주로 산책하는 시간</label>${chipsHtml('walkTimes', TIME_SLOTS, me.walkTimes)}</div>
     <div class="field"><label>관심사</label>${chipsHtml('interests', INTERESTS, me.interests)}</div>
-    <div class="field"><label for="f-bio">한 줄 소개</label><textarea id="f-bio" maxlength="120" placeholder="예: 주말마다 한강 산책해요!">${esc(me.bio)}</textarea></div>`;
+    <div class="field"><label for="f-bio">소개</label><textarea class="input" id="f-bio" maxlength="120" placeholder="예: 주말마다 한강 산책해요">${esc(me.bio)}</textarea></div>`;
 }
-const bindPersonFields = () => bindToggles();
 function readPersonFields() {
   const me = state.me;
   const name = $('#f-name').value.trim();
@@ -204,31 +294,25 @@ function readPersonFields() {
   return true;
 }
 
-const DOG_EMOJIS = ['🐶', '🐕', '🐩', '🦮', '🐕‍🦺', '🐺'];
 function dogFields(dog) {
   return `
-    <div class="field"><label>프로필 아이콘</label>
-      <div class="emoji-pick" data-seg="emoji">${DOG_EMOJIS.map((e) => `<button type="button" data-v="${e}" class="${e === dog.emoji ? 'on' : ''}">${e}</button>`).join('')}</div>
+    <div class="two">
+      <div class="field"><label for="d-name">이름</label><input class="input" id="d-name" maxlength="10" value="${esc(dog.name)}" placeholder="예: 초코" /></div>
+      <div class="field"><label for="d-age">나이</label><input class="input" id="d-age" type="number" inputmode="numeric" min="0" max="25" value="${esc(dog.age)}" /></div>
     </div>
-    <div class="row">
-      <div class="field" style="flex:1"><label for="d-name">이름</label><input id="d-name" maxlength="10" value="${esc(dog.name)}" placeholder="예: 초코" /></div>
-      <div class="field" style="flex:1"><label for="d-age">나이</label><input id="d-age" type="number" min="0" max="25" value="${esc(dog.age)}" /></div>
-    </div>
-    <div class="field"><label for="d-breed">견종</label><input id="d-breed" maxlength="16" value="${esc(dog.breed)}" placeholder="예: 포메라니안" /></div>
+    <div class="field"><label for="d-breed">견종</label><input class="input" id="d-breed" maxlength="16" value="${esc(dog.breed)}" placeholder="예: 포메라니안" /></div>
     <div class="field"><label>크기</label>${segHtml('size', SIZES, dog.size)}</div>
     <div class="field"><label>산책 에너지</label>${segHtml('energy', ENERGY, dog.energy)}</div>
-    <div class="field"><label>다른 강아지와는?</label>${segHtml('friendly', ['금방 친해져요', '천천히 친해져요'], dog.friendly ? '금방 친해져요' : '천천히 친해져요')}</div>
-    <div class="field"><label for="d-traits">성격 키워드 (쉼표로 구분)</label><input id="d-traits" value="${esc(dog.traits.join(', '))}" placeholder="예: 애교쟁이, 간식 좋아함" /></div>`;
+    <div class="field"><label>다른 강아지와는</label>${segHtml('friendly', ['금방 친해져요', '천천히 친해져요'], dog.friendly ? '금방 친해져요' : '천천히 친해져요')}</div>
+    <div class="field"><label for="d-traits">성격 (쉼표로 구분)</label><input class="input" id="d-traits" value="${esc(dog.traits.join(', '))}" placeholder="예: 애교쟁이, 간식 좋아함" /></div>`;
 }
-const bindDogFields = () => bindToggles();
-function readDogFields(lenient = false) {
+function readDogFields() {
   const dog = state.me.dog;
   const name = $('#d-name').value.trim();
-  if (!name && !lenient) { toast('강아지 이름을 입력해 주세요'); return false; }
+  if (!name) { toast('강아지 이름을 입력해 주세요'); return false; }
   Object.assign(dog, {
     name, age: Number($('#d-age').value) || 0, breed: $('#d-breed').value.trim() || '믹스견',
     size: segVal('size'), energy: segVal('energy'), friendly: segVal('friendly') === '금방 친해져요',
-    emoji: segVal('emoji') || dog.emoji,
     traits: $('#d-traits').value.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 4),
   });
   save();
@@ -243,17 +327,20 @@ function candidates() {
 }
 
 function renderDiscover() {
-  $('#title').textContent = '오늘의 산책 메이트';
+  setTop('탐색', { actions: `<button class="icon-btn" id="filterBtn" aria-label="필터">${icon('sliders', 22)}</button>` });
+  $('#filterBtn').onclick = openFilters;
   const list = candidates();
+
   if (!list.length) {
-    view.innerHTML = `
-      <div class="empty"><span class="big">🌙</span>
-        근처의 산책 메이트를 모두 확인했어요.<br/>필터를 넓히거나 내일 다시 찾아봐요!
-        <div style="margin-top:20px" class="row">
-          <button class="btn secondary" id="openFilter">필터 변경</button>
-          <button class="btn secondary" id="resetSeen">다시 보기</button>
-        </div>
-      </div>`;
+    view.innerHTML = `<div class="empty">
+      <div class="ic-wrap">${icon('compass', 28)}</div>
+      <strong>오늘의 추천을 모두 확인했어요</strong>
+      필터를 넓히거나 내일 다시 찾아봐요.
+      <div class="stack" style="max-width:260px;margin:20px auto 0">
+        <button class="btn" id="openFilter">필터 변경</button>
+        <button class="btn soft" id="resetSeen">지나친 사람 다시 보기</button>
+      </div>
+    </div>`;
     $('#openFilter').onclick = openFilters;
     $('#resetSeen').onclick = () => {
       const matched = new Set(state.matches.map((m) => m.personId));
@@ -265,38 +352,56 @@ function renderDiscover() {
 
   const c = list[0];
   const p = c.person;
-  view.innerHTML = `
-    <div class="card profile-card card-enter" id="pcard">
-      <div class="profile-hero" style="background:linear-gradient(160deg, ${p.color}, ${p.color}88)">
-        <span class="dist-pill">📍 ${c.distanceKm}km</span>
-        <span class="score-pill">산책 궁합 ${c.score}%</span>
-        <span class="dog-emoji">${p.dog.emoji}</span>
-        <span class="owner-avatar" style="color:var(--primary-dark)">${esc(p.name[0])}</span>
-      </div>
-      <div class="profile-body">
-        <h2>${esc(p.name)} <small>${ageFromBirthYear(p.birthYear)} · ${esc(p.job)}</small></h2>
-        <div class="dog-line">${esc(p.dog.name)} · ${esc(p.dog.breed)} ${p.dog.age}살 · ${p.dog.size}견 · ${p.dog.energy}</div>
-        <p class="bio">${esc(p.bio)}</p>
-        <div class="chips">
-          ${p.dog.traits.map((t) => `<span class="chip">🐾 ${esc(t)}</span>`).join('')}
-          ${p.walkTimes.map((t) => `<span class="chip">🕒 ${t}</span>`).join('')}
-        </div>
-        ${c.reasons.length ? `<ul class="reasons">${c.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
-      </div>
-    </div>
-    <div class="swipe-actions">
-      <button class="round" id="pass" aria-label="다음에">✕</button>
-      <button class="round like" id="like" aria-label="좋아요">🐾</button>
-    </div>
-    <p class="muted small" style="text-align:center">남은 추천 ${list.length}명</p>`;
+  const count = Math.max(1, photosOf(p).length);
+  let slide = 0;
 
+  view.innerHTML = `
+    <div class="deck" id="deck">
+      <article class="card-enter" id="pcard">
+        <div class="pcard-photo">
+          ${count > 1 ? `<div class="bars">${Array.from({ length: count }, (_, i) => `<i class="${i === 0 ? 'on' : ''}"></i>`).join('')}</div>` : ''}
+          <div id="slide" style="height:100%">${media(p, 0)}</div>
+          <button class="tap l" aria-label="이전 사진"></button><button class="tap r" aria-label="다음 사진"></button>
+          <span class="match-chip">산책 궁합 <b>${c.score}%</b></span>
+          <div class="shade"></div>
+          <div class="cap">
+            <div class="name">${esc(p.dog.name)}<small>${p.dog.age}살</small></div>
+            <div class="meta">${esc(p.dog.breed)} · ${p.dog.size}견 · ${icon('pin', 14)} ${c.distanceKm}km</div>
+          </div>
+        </div>
+        <div class="pcard-info">
+          <div class="owner">
+            <div class="avatar">${esc(p.name[0])}</div>
+            <div><div class="n">보호자 ${esc(p.name)}</div><div class="s">${ageFromBirthYear(p.birthYear)}세 · ${esc(p.job)}</div></div>
+          </div>
+          <p class="bio">${esc(p.bio)}</p>
+          <div class="chips">
+            ${p.dog.traits.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}
+            <span class="tag">${p.dog.energy} 산책</span>
+            ${p.walkTimes.map((t) => `<span class="tag">${icon('clock', 13)}${t}</span>`).join('')}
+          </div>
+          ${c.reasons.length ? `<div class="why"><h4>우리가 잘 맞는 이유</h4><ul>${c.reasons.map((r) => `<li>${icon('check', 16)}${esc(r)}</li>`).join('')}</ul></div>` : ''}
+        </div>
+      </article>
+    </div>
+    <div class="actions">
+      <button class="round" id="pass" aria-label="다음에">${icon('x', 28)}</button>
+      <button class="round like" id="like" aria-label="좋아요">${icon('heart', 28)}</button>
+    </div>`;
+
+  const showSlide = (i) => {
+    slide = (i + count) % count;
+    $('#slide').innerHTML = media(p, slide);
+    view.querySelectorAll('.bars i').forEach((b, j) => b.classList.toggle('on', j === slide));
+  };
+  view.querySelector('.tap.l').onclick = () => count > 1 && showSlide(slide - 1);
+  view.querySelector('.tap.r').onclick = () => count > 1 && showSlide(slide + 1);
   $('#pass').onclick = () => swipe(p, false);
   $('#like').onclick = () => swipe(p, true);
 }
 
 function swipe(p, liked) {
-  const card = $('#pcard');
-  card.classList.add(liked ? 'card-out-right' : 'card-out-left');
+  $('#pcard').classList.add(liked ? 'card-out-right' : 'card-out-left');
   state.seen.push(p.id);
   save();
   setTimeout(() => {
@@ -306,9 +411,9 @@ function swipe(p, liked) {
       showMatchModal(p);
     } else {
       render();
-      if (liked) toast(`${p.name}님에게 좋아요를 보냈어요 🐾`);
+      if (liked) toast(`${p.name}님에게 좋아요를 보냈어요`);
     }
-  }, 260);
+  }, 240);
 }
 
 function createMatch(p) {
@@ -319,7 +424,7 @@ function createMatch(p) {
     matchedAt: new Date().toISOString(),
     unread: true,
     messages: [
-      { from: 'system', text: `산책 궁합 ${c.score}% 매칭! ${c.reasons[0] ? `(${c.reasons[0]})` : ''}`, at: Date.now() },
+      { from: 'system', text: `산책 궁합 ${c.score}%로 매칭됐어요`, at: Date.now() },
       { from: p.id, text: `안녕하세요! ${p.dog.name} 보호자 ${p.name}이에요 😊 ${state.me.dog.name || '아이'} 너무 귀여워요!`, at: Date.now() },
     ],
   });
@@ -329,11 +434,13 @@ function createMatch(p) {
 function showMatchModal(p) {
   openModal(`
     <div class="match-pop">
-      <div class="pair">${state.me.dog.emoji} 💛 ${p.dog.emoji}</div>
-      <h3>산책 매칭 성공!</h3>
-      <p class="muted">${esc(p.name)}님도 ${esc(state.me.name)}님에게 좋아요를 보냈어요.<br/>${esc(p.dog.name)}와(과) 첫 산책을 계획해 보세요.</p>
-      <button class="btn" id="m-chat">대화 시작하기</button>
-      <button class="btn ghost" id="m-later">계속 둘러보기</button>
+      <div class="pair"><div>${media(state.me)}</div><div>${media(p)}</div></div>
+      <h3>산책 친구가 생겼어요</h3>
+      <p class="desc">${esc(p.name)}님도 ${esc(state.me.dog.name)}에게 좋아요를 보냈어요.<br/>인사를 나누고 첫 산책을 계획해 보세요.</p>
+      <div class="stack">
+        <button class="btn accent" id="m-chat">대화 시작하기</button>
+        <button class="btn text" id="m-later">계속 둘러보기</button>
+      </div>
     </div>`, (root) => {
     $('#m-chat', root).onclick = () => { closeModal(); go('chat', { id: p.id, back: 'matches' }); };
     $('#m-later', root).onclick = closeModal;
@@ -343,15 +450,15 @@ function showMatchModal(p) {
 function openFilters() {
   const f = state.filters;
   openModal(`
-    <h3>추천 필터</h3>
-    <p class="muted small" style="margin:0 0 16px">조건에 맞는 산책 메이트만 보여드려요.</p>
-    <div class="field"><label for="km">최대 거리: <b id="kmv">${f.maxKm}</b>km</label>
+    <h3>필터</h3>
+    <p class="desc">조건에 맞는 산책 메이트만 보여드려요.</p>
+    <div class="field"><label for="km">거리 · <b id="kmv" style="color:var(--text)">${f.maxKm}km 이내</b></label>
       <input id="km" type="range" min="1" max="10" step="1" value="${f.maxKm}" /></div>
     <div class="field"><label>강아지 크기</label>${chipsHtml('sizes', SIZES, f.sizes)}</div>
     <div class="field"><label>만나고 싶은 사람</label>${segHtml('lookingFor', ['남성', '여성', '모두'], state.me.lookingFor)}</div>
     <button class="btn" id="apply">적용하기</button>`, (root) => {
     bindToggles(root);
-    $('#km', root).oninput = (e) => { $('#kmv', root).textContent = e.target.value; };
+    $('#km', root).oninput = (e) => { $('#kmv', root).textContent = `${e.target.value}km 이내`; };
     $('#apply', root).onclick = () => {
       const sizes = chipVals('sizes', root);
       state.filters = { maxKm: Number($('#km', root).value), sizes: sizes.length ? sizes : [...SIZES] };
@@ -361,64 +468,70 @@ function openFilters() {
   });
 }
 
-// ---------- 매칭 목록 ----------
+// ---------- 대화 목록 ----------
 function renderMatches() {
-  $('#title').textContent = '매칭';
+  setTop('대화');
   const active = state.matches.filter((m) => !state.blocked.includes(m.personId));
   if (!active.length) {
-    view.innerHTML = `<div class="empty"><span class="big">💌</span>아직 매칭이 없어요.<br/>탐색 탭에서 마음에 드는 산책 메이트에게<br/>좋아요를 눌러보세요!</div>`;
+    view.innerHTML = `<div class="empty"><div class="ic-wrap">${icon('chat', 28)}</div>
+      <strong>아직 매칭이 없어요</strong>탐색에서 마음에 드는 친구에게<br/>좋아요를 눌러보세요.
+      <div style="max-width:200px;margin:0 auto"><button class="btn" id="goDiscover">둘러보기</button></div></div>`;
+    $('#goDiscover').onclick = () => go('discover');
     return;
   }
   const fresh = active.filter((m) => m.messages.every((x) => x.from !== 'me'));
-  const talking = active.filter((m) => !fresh.includes(m));
 
   view.innerHTML = `
-    ${fresh.length ? `<div class="section-title" style="margin-top:0">새로운 매칭</div>
+    ${fresh.length ? `<div class="label">새로운 매칭</div>
       <div class="new-matches">${fresh.map((m) => {
         const p = person(m.personId);
-        return `<button data-open="${p.id}"><span class="avatar" style="background:${p.color}">${p.dog.emoji}</span>${esc(p.name)}</button>`;
+        return `<button data-open="${p.id}"><div class="thumb">${media(p)}</div>${esc(p.dog.name)}</button>`;
       }).join('')}</div>` : ''}
-    <div class="section-title">대화</div>
+    <div class="label">메시지</div>
     <div class="list">
       ${active.map((m) => {
         const p = person(m.personId);
         const last = m.messages[m.messages.length - 1];
+        const lastText = last.kind === 'walk' ? '산책을 제안했어요' : last.text;
         return `<button class="list-item" data-open="${p.id}">
-          <span class="avatar" style="background:${p.color}">${p.dog.emoji}<span class="mini">${esc(p.name[0])}</span></span>
-          <span class="grow"><div class="name">${esc(p.name)} <span class="muted small">& ${esc(p.dog.name)}</span></div>
-          <div class="sub">${last.from === 'me' ? '나: ' : ''}${esc(last.text)}</div></span>
+          <div class="avatar lg">${media(p)}</div>
+          <div class="grow"><div class="name">${esc(p.name)} <span>· ${esc(p.dog.name)}</span></div>
+          <div class="sub">${last.from === 'me' ? '나: ' : ''}${esc(lastText)}</div></div>
           ${m.unread ? '<span class="dot"></span>' : ''}
         </button>`;
       }).join('')}
-    </div>
-    ${talking.length === 0 ? '<p class="muted small" style="text-align:center;margin-top:16px">먼저 인사를 건네보세요 👋</p>' : ''}`;
+    </div>`;
 
   view.querySelectorAll('[data-open]').forEach((b) => { b.onclick = () => go('chat', { id: b.dataset.open, back: 'matches' }); });
 }
 
 // ---------- 채팅 ----------
+function activeWalk(personId) {
+  return state.walks.find((w) => w.personId === personId && w.status !== 'cancelled' && walkStatus(w) !== 'done');
+}
+
 function renderChat() {
   const p = person(route.id);
   const m = matchOf(p.id);
   m.unread = false;
   save();
   updateBadge();
-  $('#title').textContent = `${p.name} & ${p.dog.name}`;
+  setTop(`${p.name} · ${p.dog.name}`, { back: true, actions: `<button class="icon-btn" id="more" aria-label="안전 메뉴">${icon('more', 22)}</button>` });
 
-  const c = compatibility(state.me, p);
-  const nextWalk = state.walks.find((w) => w.personId === p.id && w.status !== 'cancelled' && walkStatus(w) !== 'done');
+  const w = activeWalk(p.id);
+  const plan = w
+    ? `<div class="grow"><b>${fmtDate(w.datetime)}</b><span>${esc(course(w.courseId).name)} · ${w.status === 'pending' ? '수락 대기 중' : '약속 확정'}</span></div>
+       <button class="btn sm outline" id="planBtn">일정 보기</button>`
+    : `<div class="grow"><b>첫 산책을 제안해 보세요</b><span>안심 코스로 추천해 드려요</span></div>
+       <button class="btn sm accent" id="planBtn">${icon('route', 16)}코스 추천</button>`;
 
   view.innerHTML = `
-    <div class="chat-wrap">
-      <div class="chat-header-info">
-        <span>📍 ${c.distanceKm}km · 궁합 ${c.score}%</span>
-        <button class="btn secondary" id="more" aria-label="안전 메뉴">🛡️</button>
-        <button class="btn" id="propose">${nextWalk ? '산책 일정 보기' : '🐾 산책 제안'}</button>
-      </div>
+    <div class="chat">
+      <div class="plan-bar">${plan}</div>
       <div class="messages" id="msgs">${m.messages.map(msgHtml).join('')}</div>
       <form class="composer" id="composer">
         <input id="msgInput" placeholder="메시지 보내기" autocomplete="off" maxlength="300" />
-        <button type="submit">전송</button>
+        <button type="submit" aria-label="전송">${icon('send', 18)}</button>
       </form>
     </div>`;
   scrollChat();
@@ -431,13 +544,25 @@ function renderChat() {
     $('#msgInput').value = '';
     fakeReply(p);
   };
-  $('#propose').onclick = () => (nextWalk ? go('walks') : openProposal(p));
+  $('#planBtn').onclick = () => (w ? go('walks') : openProposal(p));
   $('#more').onclick = () => openSafetyMenu(p);
 }
 
 function msgHtml(msg) {
   if (msg.from === 'system') return `<div class="msg system">${esc(msg.text)}</div>`;
-  if (msg.kind === 'walk') return `<div class="msg walk-card">${msg.text.split('\n').map(esc).join('<br/>')}</div>`;
+  if (msg.kind === 'walk') {
+    const w = state.walks.find((x) => x.id === msg.walkId);
+    if (!w) return '';
+    const c = course(w.courseId);
+    const s = courseSafety(c, w.slot);
+    return `<div class="walk-card">
+      <div class="wc-head">${icon('route', 18)}<span class="grow">산책 제안</span>${safeBadge(s.level)}</div>
+      <div class="wc-body">
+        <div>${icon('clock', 16)}${fmtDate(w.datetime)}</div>
+        <div>${icon('pin', 16)}${esc(c.name)} · 약 ${c.minutes}분</div>
+      </div>
+    </div>`;
+  }
   return `<div class="msg ${msg.from === 'me' ? 'me' : 'them'}">${esc(msg.text)}</div>`;
 }
 
@@ -462,77 +587,112 @@ function fakeReply(p, text) {
     .replace('{dog}', p.dog.name).replace('{myDog}', state.me.dog.name || '아이');
   setTimeout(() => {
     if (route.name === 'chat' && route.id === p.id) {
-      $('#msgs').insertAdjacentHTML('beforeend', '<div class="typing" id="typing">입력 중…</div>');
+      $('#msgs').insertAdjacentHTML('beforeend', '<div class="typing" id="typing"><i></i><i></i><i></i></div>');
       scrollChat();
     }
     setTimeout(() => { $('#typing')?.remove(); pushMsg(p.id, { from: p.id, text: reply }); }, 1100);
   }, 600);
 }
 
-// ---------- 산책 제안 ----------
-function openProposal(p) {
-  const spots = suggestSpots(state.me, p, SPOTS, 4);
-  const commonTimes = state.me.walkTimes.filter((t) => p.walkTimes.includes(t));
-  const slot = commonTimes[0] || p.walkTimes[0];
-  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i + 1); return d; });
-  const dayLabel = (d, i) => (i === 0 ? '내일' : `${d.getMonth() + 1}/${d.getDate()} (${'일월화수목금토'[d.getDay()]})`);
+// ---------- 산책 제안 (안심 코스) ----------
+const SLOT_HOUR = { '이른 아침': 7, '점심': 12, '저녁': 18, '밤': 21 };
 
-  openModal(`
-    <h3>🐾 첫 산책 제안하기</h3>
-    <p class="muted small" style="margin:0 0 14px">두 분의 중간 지점에서 가까운 산책 코스예요.</p>
-    <div id="spots">${spots.map((s, i) => `
-      <button class="spot ${i === 0 ? 'on' : ''}" data-id="${s.id}">
-        <div class="t">${esc(s.name)} <span class="chip" style="float:right">${s.type}</span></div>
-        <div class="d">중간 지점에서 ${s.distanceKm}km · ${esc(s.note)}</div>
-      </button>`).join('')}</div>
-    <div class="field" style="margin-top:8px"><label>날짜</label>
-      <div class="chips" data-seg="day">${days.map((d, i) => `<button type="button" class="chip ${i === 0 ? 'on' : ''}" data-v="${i}">${dayLabel(d, i)}</button>`).join('')}</div></div>
-    <div class="field"><label>시간대 ${commonTimes.length ? '<span class="chip">✓ 둘 다 선호</span>' : ''}</label>${segHtml('slot', TIME_SLOTS, slot)}</div>
-    <div class="safety">🛡️ 첫 만남은 사람이 많은 공공장소에서, 밝은 시간대를 추천해요. 리드줄과 배변봉투도 꼭 챙겨주세요!</div>
-    <button class="btn" id="send">산책 제안 보내기</button>`, (root) => {
-    bindToggles(root);
-    $('#spots', root).onclick = (e) => {
-      const b = e.target.closest('.spot'); if (!b) return;
-      root.querySelectorAll('.spot').forEach((x) => x.classList.toggle('on', x === b));
+function courseHtml(c, selected) {
+  const s = c.safety;
+  return `<button class="course ${selected ? 'on' : ''}" data-id="${c.id}">
+    <div class="top"><span class="t">${esc(c.name)}</span>${safeBadge(s.level)}</div>
+    <div class="m">${c.type} · ${c.lengthKm}km · 약 ${c.minutes}분 · 중간 지점에서 ${c.distanceKm}km</div>
+    <div class="sig">${s.checks.map((k) => `<span class="${k.ok ? '' : 'bad'}" title="${esc(k.label)}">${icon(SAFETY_ICON[k.key], 16)}</span>`).join('')}</div>
+    ${selected ? `<ul class="checklist">
+      ${s.checks.map((k) => `<li class="${k.ok ? '' : 'bad'}">${icon(k.ok ? 'check' : 'alert', 16)}${esc(k.label)}</li>`).join('')}
+      <li>${icon('pin', 16)}${esc(c.note)}</li>
+    </ul>` : ''}
+  </button>`;
+}
+
+function openProposal(p) {
+  const common = state.me.walkTimes.filter((t) => p.walkTimes.includes(t));
+  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i + 1); return d; });
+  const dayLabel = (d, i) => (i === 0 ? '내일' : `${d.getMonth() + 1}/${d.getDate()} ${DAYS[d.getDay()]}`);
+  const ui = { slot: common[0] || p.walkTimes[0], day: 0, safeOnly: state.me.safeMode !== false, courseId: null };
+
+  openModal('', (root) => {
+    const draw = () => {
+      const { courses, hiddenCount } = recommendCourses(state.me, p, COURSES, { slot: ui.slot, safeOnly: ui.safeOnly, limit: 4 });
+      if (!courses.some((c) => c.id === ui.courseId)) ui.courseId = courses[0]?.id ?? null;
+      const scroll = root.scrollTop;
+      root.innerHTML = `
+        <h3>첫 산책 제안하기</h3>
+        <p class="desc">두 분 사이 중간 지점 근처에서, 선택한 시간대에 안전한 코스를 추천해요.</p>
+        <div class="label">날짜</div>
+        <div class="chips" data-seg="day">${days.map((d, i) => `<button type="button" class="tag ${i === ui.day ? 'on' : ''}" data-v="${i}">${dayLabel(d, i)}</button>`).join('')}</div>
+        <div class="label">시간대 ${common.includes(ui.slot) ? '<span class="tag" style="height:24px;font-size:12px">둘 다 선호</span>' : ''}</div>
+        ${segHtml('slot', TIME_SLOTS, ui.slot)}
+        <div class="label">추천 코스</div>
+        <label class="switch-row" style="margin-bottom:12px">
+          ${icon('shield', 22)}
+          <div class="grow"><div class="t">안심 코스만 보기</div><div class="d">인적 드문 길, 어두운 길, 숲길·골목은 빼고 추천해요</div></div>
+          <span class="switch"><input type="checkbox" id="safeOnly" ${ui.safeOnly ? 'checked' : ''} /><span></span></span>
+        </label>
+        ${ui.safeOnly && hiddenCount ? `<div class="hidden-note">${icon('eye', 16)}<span>${ui.slot}에 으슥한 코스 ${hiddenCount}곳을 숨겼어요</span><button id="showAll">모두 보기</button></div>` : ''}
+        <div id="courses">${courses.length ? courses.map((c) => courseHtml(c, c.id === ui.courseId)).join('') : '<p class="muted small">이 시간대에 추천할 만한 안심 코스가 없어요. 다른 시간대를 골라보세요.</p>'}</div>
+        <div class="notice">${icon('shield', 18)}<span>첫 만남은 밝은 시간, 사람이 많은 곳을 추천해요. 약속 정보를 지인에게 공유해 두면 더 안심이에요.</span></div>
+        <div class="sheet-foot"><button class="btn accent" id="send" ${ui.courseId ? '' : 'disabled'}>산책 제안 보내기</button></div>`;
+      root.scrollTop = scroll;
+
+      bindToggles(root, (name, v) => {
+        if (name === 'slot') { ui.slot = v; draw(); }
+        if (name === 'day') ui.day = Number(v);
+      });
+      $('#safeOnly', root).onchange = (e) => { ui.safeOnly = e.target.checked; draw(); };
+      $('#showAll', root)?.addEventListener('click', () => { ui.safeOnly = false; draw(); });
+      $('#courses', root).onclick = (e) => {
+        const b = e.target.closest('.course'); if (!b) return;
+        ui.courseId = b.dataset.id; draw();
+      };
+      $('#send', root).onclick = () => sendProposal(p, ui, days);
     };
-    $('#send', root).onclick = () => {
-      const spotId = root.querySelector('.spot.on').dataset.id;
-      const dayIdx = Number(segVal('day', root));
-      const s = segVal('slot', root);
-      const hours = { '이른 아침': 7, '점심': 12, '저녁': 18, '밤': 21 }[s];
-      const d = days[dayIdx];
-      d.setHours(hours, 0, 0, 0);
-      const walk = { id: `w${Date.now()}`, personId: p.id, spotId, datetime: d.toISOString(), slot: s, status: 'pending', review: null };
-      state.walks.push(walk);
-      save();
-      closeModal();
-      pushMsg(p.id, { from: 'me', kind: 'walk', text: `📅 산책 제안\n${fmtDate(walk.datetime)}\n📍 ${spot(spotId).name}` });
-      toast('산책 제안을 보냈어요!');
-      // 데모: 상대방이 잠시 후 수락
-      setTimeout(() => {
-        walk.status = 'confirmed';
-        save();
-        pushMsg(p.id, { from: 'system', text: `${p.name}님이 산책 약속을 수락했어요! 🎉` });
-        fakeReply(p, `좋아요! ${spot(spotId).name}에서 봬요. ${p.dog.name}도 신났어요 🐾`);
-        if (route.name === 'chat') renderChat();
-        if (route.name === 'walks') renderWalks();
-      }, 2500);
-      renderChat();
-    };
+    draw();
   });
+}
+
+function sendProposal(p, ui, days) {
+  const c = course(ui.courseId);
+  const safety = courseSafety(c, ui.slot);
+  if (safety.level === '주의' && !confirm(`${c.name}은(는) ${ui.slot}에 인적이 드물거나 어두운 구간이 있어요.\n그래도 이 코스로 제안할까요?`)) return;
+
+  const d = new Date(days[ui.day]);
+  d.setHours(SLOT_HOUR[ui.slot], 0, 0, 0);
+  const walk = { id: `w${Date.now()}`, personId: p.id, courseId: c.id, datetime: d.toISOString(), slot: ui.slot, status: 'pending', review: null };
+  state.walks.push(walk);
+  save();
+  closeModal();
+  pushMsg(p.id, { from: 'me', kind: 'walk', walkId: walk.id, text: '' });
+  toast('산책 제안을 보냈어요');
+  renderChat();
+  // 데모: 상대방이 잠시 후 수락
+  setTimeout(() => {
+    walk.status = 'confirmed';
+    save();
+    pushMsg(p.id, { from: 'system', text: `${p.name}님이 산책 약속을 수락했어요` });
+    fakeReply(p, `좋아요! ${c.name}에서 봬요. ${p.dog.name}도 벌써 신났어요 🐾`);
+    if (route.name === 'chat' && route.id === p.id) renderChat();
+    if (route.name === 'walks') renderWalks();
+  }, 2500);
 }
 
 function openSafetyMenu(p) {
   openModal(`
     <h3>${esc(p.name)}님</h3>
-    <p class="muted small">안전한 만남을 위해 불편한 점이 있다면 알려주세요.</p>
-    <div class="safety">✔️ 휴대폰 번호 인증 회원 · 매너 평가 기반 추천<br/>✔️ 약속 장소/시간을 지인에게 공유하는 걸 권장해요.</div>
-    <button class="btn secondary" id="share" style="margin-bottom:8px">📤 약속 정보 지인에게 공유</button>
-    <button class="btn secondary" id="report" style="margin-bottom:8px">🚩 신고하기</button>
-    <button class="btn" id="block" style="background:var(--danger)">차단하기</button>`, (root) => {
+    <p class="desc">불편한 점이 있다면 언제든 알려주세요. 신고 내용은 상대에게 알려지지 않아요.</p>
+    <button class="menu-item" id="share">${icon('share', 20)}약속 정보 지인에게 공유</button>
+    <button class="menu-item" id="report">${icon('flag', 20)}신고하기</button>
+    <button class="menu-item danger" id="block">${icon('ban', 20)}차단하기</button>`, (root) => {
     $('#share', root).onclick = async () => {
       const w = state.walks.find((x) => x.personId === p.id && x.status !== 'cancelled');
-      const text = w ? `[같이걸을개] ${fmtDate(w.datetime)} ${spot(w.spotId).name}에서 ${p.name}님과 산책 예정` : `[같이걸을개] ${p.name}님과 산책 약속 조율 중`;
+      const text = w
+        ? `[같이걸을개] ${fmtDate(w.datetime)} ${course(w.courseId).name}에서 ${p.name}님과 산책 예정`
+        : `[같이걸을개] ${p.name}님과 산책 약속 조율 중`;
       try { await navigator.clipboard.writeText(text); toast('약속 정보를 복사했어요'); } catch { toast(text); }
       closeModal();
     };
@@ -541,46 +701,50 @@ function openSafetyMenu(p) {
       if (!confirm(`${p.name}님을 차단할까요? 대화와 일정이 숨겨져요.`)) return;
       state.blocked.push(p.id);
       state.walks.forEach((w) => { if (w.personId === p.id && w.status !== 'cancelled') w.status = 'cancelled'; });
-      save(); closeModal(); go('matches'); toast('차단했어요.');
+      save(); closeModal(); go('matches'); toast('차단했어요');
     };
   });
 }
 
 // ---------- 산책 일정 ----------
 function renderWalks() {
-  $('#title').textContent = '산책 일정';
+  setTop('산책 일정');
   const walks = state.walks.filter((w) => !state.blocked.includes(w.personId) && w.status !== 'cancelled');
   if (!walks.length) {
-    view.innerHTML = `<div class="empty"><span class="big">📅</span>아직 잡힌 산책이 없어요.<br/>매칭된 분과 대화하다가<br/><b>🐾 산책 제안</b>을 눌러보세요.</div>`;
+    view.innerHTML = `<div class="empty"><div class="ic-wrap">${icon('calendar', 28)}</div>
+      <strong>예정된 산책이 없어요</strong>대화방에서 <b>코스 추천</b>을 눌러<br/>첫 산책을 제안해 보세요.</div>`;
     return;
   }
   const sorted = [...walks].sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
   const label = (w) => {
     if (w.status === 'pending') return ['pending', '수락 대기'];
-    const s = walkStatus(w);
-    return { upcoming: ['upcoming', '예정'], ongoing: ['ongoing', '산책 중'], done: ['done', '완료'] }[s];
+    return { upcoming: ['upcoming', '예정'], ongoing: ['ongoing', '산책 중'], done: ['done', '완료'] }[walkStatus(w)];
   };
 
-  view.innerHTML = `<div class="list">${sorted.map((w) => {
+  view.innerHTML = sorted.map((w) => {
     const p = person(w.personId);
-    const s = spot(w.spotId);
+    const c = course(w.courseId);
+    const s = courseSafety(c, w.slot);
     const [cls, txt] = label(w);
     const done = w.status === 'confirmed' && walkStatus(w) === 'done';
-    return `<div class="walk-item">
-      <div class="row" style="align-items:center;justify-content:space-between">
-        <span class="when">${fmtDate(w.datetime)}</span><span class="status ${cls}">${txt}</span>
+    return `<div class="walk">
+      <div class="head"><span class="when">${fmtDate(w.datetime)}</span><span class="status ${cls}">${txt}</span></div>
+      <div class="info">
+        <div>${icon('pin', 16)}${esc(c.name)} · ${c.lengthKm}km</div>
+        <div>${icon('user', 16)}${esc(p.name)} · ${esc(p.dog.name)}</div>
+        <div>${icon('shield', 16)}${w.slot} 기준 안전도 ${safeBadge(s.level)}</div>
       </div>
-      <div class="where">📍 ${esc(s.name)} · ${esc(p.name)} & ${esc(p.dog.name)} ${p.dog.emoji}</div>
       <div class="row">
-        <button class="btn secondary" data-chat="${p.id}">대화</button>
+        <button class="btn soft sm grow" data-chat="${p.id}">대화</button>
         ${done
-          ? (w.review ? `<button class="btn ghost" disabled>⭐ ${w.review.rating}점 평가 완료</button>` : `<button class="btn" data-review="${w.id}">매너 평가</button>`)
-          : `<button class="btn ghost" data-cancel="${w.id}">취소</button>
-             <button class="btn ghost" data-finish="${w.id}" title="데모: 산책을 완료 처리">완료 처리</button>`}
+          ? (w.review
+            ? `<button class="btn soft sm grow" disabled>평가 완료 · ${w.review.rating}점</button>`
+            : `<button class="btn sm grow" data-review="${w.id}">매너 평가</button>`)
+          : `<button class="btn soft sm grow" data-cancel="${w.id}">취소</button>
+             <button class="btn outline sm grow" data-finish="${w.id}" title="데모: 산책을 완료 처리">완료 처리</button>`}
       </div>
     </div>`;
-  }).join('')}</div>
-  <p class="muted small" style="text-align:center;margin-top:14px">산책이 끝나면 매너 평가를 남겨주세요. 평가는 상대방에게 익명으로 반영돼요.</p>`;
+  }).join('') + '<p class="muted small" style="text-align:center;margin-top:8px">산책이 끝나면 매너 평가를 남겨주세요. 평가는 익명으로 반영돼요.</p>';
 
   view.querySelectorAll('[data-chat]').forEach((b) => { b.onclick = () => go('chat', { id: b.dataset.chat, back: 'walks' }); });
   view.querySelectorAll('[data-cancel]').forEach((b) => {
@@ -589,7 +753,7 @@ function renderWalks() {
       if (!confirm('산책 약속을 취소할까요?')) return;
       w.status = 'cancelled';
       save();
-      pushMsg(w.personId, { from: 'system', text: '산책 약속이 취소됐어요.' });
+      pushMsg(w.personId, { from: 'system', text: '산책 약속이 취소됐어요' });
       renderWalks();
     };
   });
@@ -613,10 +777,10 @@ function openReview(w) {
   let rating = 5;
   openModal(`
     <h3>${esc(p.name)}님과의 산책은 어땠나요?</h3>
-    <p class="muted small" style="margin:0">${esc(spot(w.spotId).name)} · ${fmtDate(w.datetime)}</p>
-    <div class="stars" id="stars">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" class="on" aria-label="${n}점">★</button>`).join('')}</div>
+    <p class="desc">${esc(course(w.courseId).name)} · ${fmtDate(w.datetime)}</p>
+    <div class="stars" id="stars">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" class="on" aria-label="${n}점">${icon('star', 36)}</button>`).join('')}</div>
     <div class="field"><label>좋았던 점</label>${chipsHtml('tags', REVIEW_TAGS, [])}</div>
-    <div class="field"><label>다시 만나고 싶나요?</label>${segHtml('again', ['네, 또 만나고 싶어요', '친구로 지낼래요'], '네, 또 만나고 싶어요')}</div>
+    <div class="field"><label>다시 만나고 싶나요?</label>${segHtml('again', ['또 만나고 싶어요', '친구로 지낼래요'], '또 만나고 싶어요')}</div>
     <button class="btn" id="submit">평가 남기기</button>`, (root) => {
     bindToggles(root);
     $('#stars', root).onclick = (e) => {
@@ -629,50 +793,56 @@ function openReview(w) {
       save();
       closeModal();
       renderWalks();
-      toast('소중한 평가 감사합니다 💛');
+      toast('평가를 남겼어요. 감사합니다!');
     };
   });
 }
 
 // ---------- 내 프로필 ----------
 function renderProfile() {
-  $('#title').textContent = '내 프로필';
+  setTop('MY');
   const me = state.me;
   const reviews = state.walks.filter((w) => w.review).map((w) => w.review);
   const avg = averageRating(reviews);
   const walksDone = state.walks.filter((w) => w.status === 'confirmed' && walkStatus(w) === 'done').length;
 
   view.innerHTML = `
-    <div class="card">
-      <div class="profile-hero" style="height:150px;background:linear-gradient(160deg, ${me.color}, ${me.color}88)">
-        <span class="dog-emoji" style="font-size:80px">${me.dog.emoji}</span>
-        <span class="owner-avatar" style="color:var(--primary-dark)">${esc(me.name[0] || '?')}</span>
-      </div>
-      <div class="profile-body">
-        <h2>${esc(me.name)} <small>${ageFromBirthYear(me.birthYear)}${me.job ? ` · ${esc(me.job)}` : ''}</small></h2>
-        <div class="dog-line">${esc(me.dog.name)} · ${esc(me.dog.breed)} ${me.dog.age}살 · ${me.dog.size}견 · ${me.dog.energy}</div>
-        ${me.bio ? `<p class="bio">${esc(me.bio)}</p>` : ''}
-        <div class="chips">
-          ${me.dog.traits.map((t) => `<span class="chip">🐾 ${esc(t)}</span>`).join('')}
-          ${me.walkTimes.map((t) => `<span class="chip">🕒 ${t}</span>`).join('')}
-          ${me.interests.map((t) => `<span class="chip">♡ ${esc(t)}</span>`).join('')}
-        </div>
+    <div class="me-head">
+      <div class="thumb">${media(me)}</div>
+      <div>
+        <div class="n">${esc(me.dog.name)} <span class="muted" style="font-weight:500;font-size:16px">${me.dog.age}살</span></div>
+        <div class="s">${esc(me.dog.breed)} · ${me.dog.size}견 · ${me.dog.energy}</div>
+        <div class="s">보호자 ${esc(me.name)} · ${ageFromBirthYear(me.birthYear)}세${me.job ? ` · ${esc(me.job)}` : ''}</div>
       </div>
     </div>
-    <div class="stat-row">
-      <div class="stat"><b>${state.matches.length}</b><span>매칭</span></div>
-      <div class="stat"><b>${walksDone}</b><span>함께한 산책</span></div>
-      <div class="stat"><b>${avg ?? '-'}</b><span>내가 준 평균 별점</span></div>
+    <div class="stats">
+      <div><b>${state.matches.length}</b><span>매칭</span></div>
+      <div><b>${walksDone}</b><span>함께한 산책</span></div>
+      <div><b>${avg ?? '-'}</b><span>내가 준 평균 별점</span></div>
     </div>
-    <button class="btn secondary" id="editMe" style="margin-bottom:8px">보호자 정보 수정</button>
-    <button class="btn secondary" id="editDog" style="margin-bottom:8px">강아지 정보 수정</button>
-    <button class="btn ghost" id="reset">데모 데이터 초기화</button>`;
 
-  $('#editMe').onclick = () => openModal(`<h3>보호자 정보</h3><div style="height:12px"></div>${personFields(me)}<button class="btn" id="save">저장</button>`, (root) => {
+    <div class="label">사진 <span class="muted small" style="font-weight:400">첫 번째 사진이 대표 사진이에요</span></div>
+    ${photoGridHtml()}
+
+    <div class="label">안전</div>
+    <label class="switch-row">
+      ${icon('shield', 22)}
+      <div class="grow"><div class="t">안심 코스 우선 추천</div><div class="d">산책 제안 시 인적 드물거나 어두운 코스를 숨겨요</div></div>
+      <span class="switch"><input type="checkbox" id="safeMode" ${me.safeMode !== false ? 'checked' : ''} /><span></span></span>
+    </label>
+
+    <div class="label">프로필</div>
+    <button class="menu-item" id="editMe">${icon('user', 20)}<span class="grow" style="text-align:left">보호자 정보 수정</span></button>
+    <button class="menu-item" id="editDog">${icon('edit', 20)}<span class="grow" style="text-align:left">강아지 정보 수정</span></button>
+    <button class="menu-item danger" id="reset">${icon('trash', 20)}<span class="grow" style="text-align:left">데모 데이터 초기화</span></button>`;
+
+  bindPhotoGrid(view, () => { $('.me-head .thumb').innerHTML = media(me); });
+  $('#safeMode').onchange = (e) => { me.safeMode = e.target.checked; save(); toast(e.target.checked ? '안심 코스만 추천할게요' : '모든 코스를 추천할게요'); };
+  $('#editMe').onclick = () => openModal(`<h3>보호자 정보</h3><div style="height:16px"></div>${personFields(me)}<div class="sheet-foot"><button class="btn" id="save">저장</button></div>`, (root) => {
     bindToggles(root);
     $('#save', root).onclick = () => { if (readPersonFields()) { closeModal(); render(); toast('저장했어요'); } };
   });
-  $('#editDog').onclick = () => openModal(`<h3>강아지 정보</h3><div style="height:12px"></div>${dogFields(me.dog)}<button class="btn" id="save">저장</button>`, (root) => {
+  $('#editDog').onclick = () => openModal(`<h3>강아지 정보</h3><div style="height:16px"></div>${dogFields(me.dog)}<div class="sheet-foot"><button class="btn" id="save">저장</button></div>`, (root) => {
     bindToggles(root);
     $('#save', root).onclick = () => { if (readDogFields()) { closeModal(); render(); toast('저장했어요'); } };
   });
