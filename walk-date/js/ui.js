@@ -30,6 +30,8 @@ const PATHS = {
   store: '<path d="M3 9l1.5-5h15L21 9M3 9v11h18V9M3 9h18M9 20v-6h6v6"/>',
   trash: '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  paw: '<circle cx="5.5" cy="10" r="2"/><circle cx="9.5" cy="5.5" r="2"/><circle cx="14.5" cy="5.5" r="2"/><circle cx="18.5" cy="10" r="2"/><path d="M12 11.5c-2.8 0-5.5 4-5.5 6.3a2.3 2.3 0 0 0 2.8 2.2c.9-.2 1.8-.5 2.7-.5s1.8.3 2.7.5a2.3 2.3 0 0 0 2.8-2.2c0-2.3-2.7-6.3-5.5-6.3Z"/>',
+  leaf: '<path d="M5 19C5 10 11 4 20 4c0 9-6 15-15 15Z"/><path d="M5 19 13 11"/>',
   sparkle: '<path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/>',
 };
 
@@ -89,4 +91,21 @@ export async function resizeImage(file, maxSide = 900, quality = 0.8) {
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+// 시작 화면 배경: 햇살 아래 언덕과 구불구불한 산책길
+export function walkScene() {
+  return `<svg viewBox="0 0 400 290" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+    <circle cx="322" cy="70" r="34" fill="#FFE2A8" opacity=".75"/>
+    <circle cx="322" cy="70" r="52" fill="#FFE2A8" opacity=".22"/>
+    <g fill="#fff" opacity=".8"><ellipse cx="86" cy="58" rx="30" ry="10"/><ellipse cx="108" cy="52" rx="20" ry="11"/><ellipse cx="250" cy="34" rx="22" ry="7"/></g>
+    <path d="M0 210 C70 168 140 186 200 200 S330 170 400 188 V290 H0Z" fill="#CFE2C6"/>
+    <path d="M0 236 C90 206 170 232 240 226 S350 204 400 214 V290 H0Z" fill="#B5D3AE"/>
+    <path d="M210 290 C200 262 252 252 236 234 S190 222 214 206" fill="none" stroke="#F4ECDC" stroke-width="16" stroke-linecap="round"/>
+    <path d="M210 290 C200 262 252 252 236 234 S190 222 214 206" fill="none" stroke="#E7D9BF" stroke-width="2" stroke-dasharray="2 8" stroke-linecap="round"/>
+    <g class="tree"><rect x="56" y="196" width="5" height="20" rx="2" fill="#9C8466"/><circle cx="58" cy="190" r="15" fill="#9CC39A"/></g>
+    <g class="tree"><rect x="338" y="182" width="5" height="18" rx="2" fill="#9C8466"/><circle cx="340" cy="176" r="13" fill="#A9CBA0"/></g>
+    <g fill="#F2B49C"><circle cx="110" cy="248" r="3"/><circle cx="300" cy="244" r="3"/><circle cx="150" cy="266" r="2.5"/></g>
+    <g fill="#fff"><circle cx="128" cy="258" r="2.5"/><circle cx="318" cy="258" r="2.5"/></g>
+  </svg>`;
 }

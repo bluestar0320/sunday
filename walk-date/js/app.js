@@ -4,7 +4,7 @@ import {
   rankCandidates, compatibility, recommendCourses, courseSafety, isMutualMatch,
   averageRating, walkStatus, ageFromBirthYear, midpoint, hazardSegments,
 } from './logic.js';
-import { icon, dogArt, resizeImage, SAFETY_ICON } from './ui.js';
+import { icon, dogArt, resizeImage, SAFETY_ICON, walkScene } from './ui.js';
 import { mountMap } from './map.js';
 
 const STORAGE_KEY = 'walkdate:v2';
@@ -214,8 +214,8 @@ function renderOnboarding() {
   if (step === 0) {
     const [a, b] = [PEOPLE[0], PEOPLE[2]];
     view.innerHTML = `<div class="welcome">
-      <div class="art"><div>${dogArt(a.art)}</div><div>${dogArt(b.art)}</div></div>
-      <div class="eyebrow">같이걸을개</div>
+      <div class="scene">${walkScene()}<div class="cards"><div>${dogArt(a.art)}</div><div>${dogArt(b.art)}</div></div></div>
+      <div class="eyebrow">${icon('leaf', 16)}같이걸을개</div>
       <h2 class="h-title">어색한 소개팅 대신,<br/>같이 걸으며 알아가요</h2>
       <p class="h-sub" style="margin-bottom:16px">강아지 산책으로 시작하는 편안한 첫 만남</p>
       <div class="feature"><div class="fi">${icon('heart')}</div><div><b>산책 궁합 추천</b><span>사는 곳, 산책 시간, 아이 성향이 맞는 사람</span></div></div>
@@ -334,7 +334,7 @@ function renderDiscover() {
 
   if (!list.length) {
     view.innerHTML = `<div class="empty">
-      <div class="ic-wrap">${icon('compass', 28)}</div>
+      <div class="ic-wrap">${icon('leaf', 32)}</div>
       <strong>오늘의 추천을 모두 확인했어요</strong>
       필터를 넓히거나 내일 다시 찾아봐요.
       <div class="stack" style="max-width:260px;margin:20px auto 0">
@@ -401,7 +401,27 @@ function renderDiscover() {
   $('#like').onclick = () => swipe(p, true);
 }
 
+// 좋아요를 누르면 하트가 바람에 날리듯 떠오른다
+function heartBurst(btn) {
+  const phone = document.querySelector('.phone');
+  const b = btn.getBoundingClientRect();
+  const r = phone.getBoundingClientRect();
+  for (let i = 0; i < 6; i++) {
+    const h = document.createElement('span');
+    h.style.left = `${b.left - r.left + b.width / 2}px`;
+    h.style.top = `${b.top - r.top + b.height / 2}px`;
+    h.className = 'heart-pop';
+    h.style.setProperty('--dx', `${Math.round((Math.random() - 0.5) * 120)}px`);
+    h.style.setProperty('--rot', `${Math.round((Math.random() - 0.5) * 60)}deg`);
+    h.style.animationDelay = `${i * 60}ms`;
+    h.innerHTML = icon('heart', 14 + Math.round(Math.random() * 10), 'filled');
+    phone.appendChild(h);
+    setTimeout(() => h.remove(), 1400);
+  }
+}
+
 function swipe(p, liked) {
+  if (liked) heartBurst($('#like'));
   $('#pcard').classList.add(liked ? 'card-out-right' : 'card-out-left');
   state.seen.push(p.id);
   save();
@@ -414,7 +434,7 @@ function swipe(p, liked) {
       render();
       if (liked) toast(`${p.name}님에게 좋아요를 보냈어요`);
     }
-  }, 240);
+  }, 430);
 }
 
 function createMatch(p) {
