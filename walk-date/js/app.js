@@ -59,7 +59,14 @@ const photosOf = (p) => p.dog.photos || [];
 // 사진이 있으면 사진, 없으면 일러스트
 function media(p, i = 0) {
   const src = photosOf(p)[i];
-  return src ? `<img class="photo" src="${src}" alt="${esc(p.dog.name)} 사진" />` : dogArt(p.art);
+  if (src) return `<img class="photo" src="${src}" alt="${esc(p.dog.name)} 사진" />`;
+  return characterArt(p);
+}
+
+// 샘플 강아지 캐릭터 이미지. 불러오지 못하면 그 아래 깔린 일러스트가 그대로 보인다
+function characterArt(p) {
+  if (!p.img) return dogArt(p.art);
+  return `<div class="art-wrap">${dogArt(p.art)}<img class="photo" src="${p.img}" alt="${esc(p.dog.name)} 캐릭터" loading="lazy" onerror="this.remove()" /></div>`;
 }
 
 function toast(msg) {
@@ -214,7 +221,7 @@ function renderOnboarding() {
   if (step === 0) {
     const [a, b] = [PEOPLE[0], PEOPLE[2]];
     view.innerHTML = `<div class="welcome">
-      <div class="scene">${walkScene()}<div class="cards"><div>${dogArt(a.art)}</div><div>${dogArt(b.art)}</div></div></div>
+      <div class="scene">${walkScene()}<div class="cards"><div>${characterArt(a)}</div><div>${characterArt(b)}</div></div></div>
       <div class="eyebrow">${icon('leaf', 16)}같이걸을개</div>
       <h2 class="h-title">어색한 소개팅 대신,<br/>같이 걸으며 알아가요</h2>
       <p class="h-sub" style="margin-bottom:16px">강아지 산책으로 시작하는 편안한 첫 만남</p>

@@ -258,6 +258,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 /* 사진 */
 .dog-art { width: 100%; height: 100%; display: block; }
 .photo { width: 100%; height: 100%; object-fit: cover; display: block; }
+.art-wrap { position: relative; width: 100%; height: 100%; }
+.art-wrap > .photo { position: absolute; inset: 0; }
 .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .photo-slot {
   position: relative; aspect-ratio: 3 / 4; border-radius: 22px; overflow: hidden;

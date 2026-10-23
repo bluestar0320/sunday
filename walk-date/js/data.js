@@ -154,6 +154,19 @@ function buildCourse(raw) {
 
 export const COURSES = RAW_COURSES.map(buildCourse);
 
+// 샘플 강아지 캐릭터 이미지 (Higgsfield Z Image로 생성). 못 불러오면 일러스트(art)로 대신 표시
+const CHARACTER_BASE = 'https://d8j0ntlcm91z4.cloudfront.net/user_37LLC5pqZCbhZJht1lqCXvClFEz/';
+const CHARACTERS = {
+  p1: 'hf_20261023_061133_580fb9ca-2df0-40b7-9346-b91ffddabf20_min.webp',
+  p2: 'hf_20261023_061133_b588962d-2d24-46c2-abc9-87e1d89f379c_min.webp',
+  p3: 'hf_20261023_061134_efbe37d2-5d2f-4ff8-9edb-7172d91e2350_min.webp',
+  p4: 'hf_20261023_061133_40ab98ba-6f19-42d6-b631-241576d55823_min.webp',
+  p5: 'hf_20261023_061704_4ca5172d-02c9-4e6f-afa7-36f11d650f4e_min.webp',
+  p6: 'hf_20261023_061133_b7924e8a-adb1-453b-b2b8-aaea66edeafc_min.webp',
+  p7: 'hf_20261023_061133_181ec193-3987-423c-b9b2-c2e6524bb569_min.webp',
+  p8: 'hf_20261023_061133_9c40d399-d248-4316-9d01-1f9eaef34ca7_min.webp',
+};
+
 export const PEOPLE = [
   {
     id: 'p1', name: '지수', gender: '여성', birthYear: 1995, job: 'UX 디자이너',
@@ -220,6 +233,8 @@ export const PEOPLE = [
     likes: ['me'],
   },
 ];
+
+for (const p of PEOPLE) if (CHARACTERS[p.id]) p.img = CHARACTER_BASE + CHARACTERS[p.id];
 
 export const DEFAULT_ME = {
   id: 'me', name: '', gender: '여성', lookingFor: '남성', birthYear: 1995, job: '',
