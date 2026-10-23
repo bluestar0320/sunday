@@ -25,6 +25,7 @@ export function ageFromBirthYear(birthYear, now = new Date()) {
 // 사람 취향보다 "같이 산책이 잘 될까"를 우선으로 본다.
 export function compatibility(me, other) {
   const reasons = [];
+  const cautions = []; // 만나기 전에 알아둘 점
   let score = 0;
 
   // 1) 거리 (최대 30점): 가까울수록 산책 약속 잡기가 쉽다
@@ -56,21 +57,38 @@ export function compatibility(me, other) {
   // 강아지 사회성: 다른 강아지를 무서워하면 감점
   if (me.dog.friendly === false || other.dog.friendly === false) {
     score -= 15;
-    reasons.push('천천히 친해지는 아이가 있어요');
+    cautions.push('천천히 친해지는 아이가 있어요');
   }
+
+  // 건강·안전: 입질 이력, 예방접종
+  const mh = me.dog.health || {};
+  const oh = other.dog.health || {};
+  if (mh.bite || oh.bite) {
+    score -= 20;
+    cautions.push(oh.bite ? `${other.dog.name}는 입질 이력이 있어요` : '우리 아이의 입질 이력이 상대에게 표시돼요');
+  }
+  if (oh.vaccinated === false) {
+    score -= 10;
+    cautions.push(`${other.dog.name}는 예방접종이 아직 끝나지 않았어요`);
+  }
+  const allergies = [oh.allergies && `${other.dog.name}: ${oh.allergies}`, mh.allergies && `${me.dog.name}: ${mh.allergies}`].filter(Boolean);
+  if (allergies.length) cautions.push(`간식 알러지 — ${allergies.join(', ')}`);
 
   return {
     score: Math.round(Math.max(0, Math.min(100, score))),
     distanceKm: Math.round(km * 10) / 10,
     reasons,
+    cautions,
   };
 }
 
 // 사용자가 받아볼 후보 목록: 필터 → 이미 본 사람 제외 → 궁합순 정렬
-export function rankCandidates(me, people, { maxKm = 5, sizes = SIZES, seen = [] } = {}) {
+export function rankCandidates(me, people, { maxKm = 5, sizes = SIZES, seen = [], vaccinatedOnly = false, verifiedOnly = false } = {}) {
   const seenSet = new Set(seen);
   return people
     .filter((p) => p.id !== me.id && !seenSet.has(p.id))
+    .filter((p) => !vaccinatedOnly || p.dog.health?.vaccinated)
+    .filter((p) => !verifiedOnly || isVerified(p))
     .filter((p) => !me.lookingFor || me.lookingFor === '모두' || p.gender === me.lookingFor)
     .filter((p) => sizes.includes(p.dog.size))
     .map((p) => ({ person: p, ...compatibility(me, p) }))
@@ -241,4 +259,20 @@ export function normalizePhone(input) {
   const d = String(input || '').replace(/\D/g, '');
   if (!/^01[016789]\d{7,8}$/.test(d)) return null;
   return d.length === 10 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}` : `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`;
+}
+
+// ---------- 강아지 건강 · 인증 ----------
+export const isVerified = (p) => Boolean(p.verified?.phone && p.verified?.registry);
+
+// 동물등록번호: 15자리 숫자 (예: 410 1000 1234 5678)
+export const validRegistryNo = (no) => /^\d{15}$/.test(String(no || '').replace(/\s|-/g, ''));
+
+export function healthFlags(dog) {
+  const h = dog.health || {};
+  return [
+    { key: 'vaccine', ok: Boolean(h.vaccinated), label: h.vaccinated ? '예방접종 완료' : '예방접종 진행 중' },
+    { key: 'neuter', ok: null, label: h.neutered ? '중성화 했어요' : '중성화 안 했어요' },
+    { key: 'bite', ok: !h.bite, label: h.bite ? '입질 이력 있음' : '입질 이력 없음' },
+    { key: 'allergy', ok: null, label: h.allergies ? `알러지: ${h.allergies}` : '알러지 없음' },
+  ];
 }

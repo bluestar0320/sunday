@@ -5,6 +5,7 @@ import {
   isMutualMatch, averageRating, walkStatus,
   toMeters, offsetLatLng, pathLengthKm, courseStats, hazardSegments,
   positionAlongPath, sessionStatus, normalizePhone,
+  healthFlags, isVerified, validRegistryNo,
 } from '../js/logic.js';
 import { PEOPLE, COURSES, DEFAULT_ME } from '../js/data.js';
 
@@ -161,4 +162,38 @@ test('normalizePhone: 휴대폰 번호만 허용하고 하이픈 형식으로', 
   assert.equal(normalizePhone('011-123-4567'), '011-123-4567');
   assert.equal(normalizePhone('02-123-4567'), null);
   assert.equal(normalizePhone('abc'), null);
+});
+
+test('compatibility: 입질 이력·미접종은 감점하고 주의사항으로 알려준다', () => {
+  const base = PEOPLE.find((p) => p.id === 'p1');
+  const biter = { ...base, dog: { ...base.dog, health: { ...base.dog.health, bite: true } } };
+  const unvacc = { ...base, dog: { ...base.dog, health: { ...base.dog.health, vaccinated: false, allergies: '닭고기' } } };
+  const a = compatibility(me, base);
+  const b = compatibility(me, biter);
+  const c = compatibility(me, unvacc);
+  assert.equal(a.score - b.score, 20);
+  assert.ok(b.cautions.some((x) => x.includes('입질')));
+  assert.equal(a.score - c.score, 10);
+  assert.ok(c.cautions.some((x) => x.includes('예방접종')));
+  assert.ok(c.cautions.some((x) => x.includes('닭고기')));
+  // 주의사항은 '잘 맞는 이유'에 섞이지 않는다
+  assert.ok(!b.reasons.some((x) => x.includes('입질')));
+});
+
+test('rankCandidates: 접종 완료 / 인증 회원만 필터', () => {
+  const all = rankCandidates({ ...me, lookingFor: '모두' }, PEOPLE, { maxKm: 10 });
+  const vacc = rankCandidates({ ...me, lookingFor: '모두' }, PEOPLE, { maxKm: 10, vaccinatedOnly: true });
+  const ver = rankCandidates({ ...me, lookingFor: '모두' }, PEOPLE, { maxKm: 10, verifiedOnly: true });
+  assert.ok(vacc.length < all.length && vacc.every((c) => c.person.dog.health.vaccinated));
+  assert.ok(ver.length < all.length && ver.every((c) => isVerified(c.person)));
+});
+
+test('validRegistryNo / healthFlags', () => {
+  assert.equal(validRegistryNo('410100012345678'), true);
+  assert.equal(validRegistryNo('410 1000 1234 5678'), true);
+  assert.equal(validRegistryNo('4101000123456789'), false); // 16자리
+  assert.equal(validRegistryNo('1234'), false);
+  const flags = healthFlags({ health: { vaccinated: true, neutered: false, bite: true, allergies: '' } });
+  assert.equal(flags.find((f) => f.key === 'bite').ok, false);
+  assert.equal(flags.find((f) => f.key === 'vaccine').ok, true);
 });

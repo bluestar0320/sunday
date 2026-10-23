@@ -173,7 +173,8 @@ export const PEOPLE = [
     bio: '퇴근 후 망원한강에서 노을 보며 걷는 게 낙이에요. 커피 좋아해요 ☕',
     location: { lat: 37.5565, lng: 126.9010 }, walkTimes: ['저녁', '밤'],
     interests: ['카페', '사진', '전시'], art: { fur: '#E0A061', muzzle: '#FFF3E4', ear: 'pointy', bg: '#F6E7D8', collar: '#3B82F6' },
-    dog: { name: '보리', breed: '웰시코기', size: '중형', age: 3, energy: '활발', friendly: true, traits: ['사람 좋아함', '공놀이 광'] },
+    dog: { name: '보리', breed: '웰시코기', size: '중형', age: 3, energy: '활발', friendly: true, traits: ['사람 좋아함', '공놀이 광'], health: { vaccinated: true, neutered: true, bite: false, allergies: '' } },
+    verified: { phone: true, registry: true },
     likes: ['me'],
   },
   {
@@ -181,7 +182,8 @@ export const PEOPLE = [
     bio: '재택근무라 점심 산책 자주 나가요. 같이 걸을 산책 메이트 구해요!',
     location: { lat: 37.5600, lng: 126.9100 }, walkTimes: ['점심', '저녁'],
     interests: ['러닝', '캠핑', '보드게임'], art: { fur: '#D98E4E', muzzle: '#FBEBD9', ear: 'pointy', bg: '#EAF0E6', collar: '#DC2626' },
-    dog: { name: '콩이', breed: '시바견', size: '중형', age: 4, energy: '보통', friendly: true, traits: ['독립적', '간식에 진심'] },
+    dog: { name: '콩이', breed: '시바견', size: '중형', age: 4, energy: '보통', friendly: true, traits: ['독립적', '간식에 진심'], health: { vaccinated: true, neutered: true, bite: false, allergies: '닭고기' } },
+    verified: { phone: true, registry: true },
     likes: [],
   },
   {
@@ -189,7 +191,8 @@ export const PEOPLE = [
     bio: '주말 아침 일찍 공원 한 바퀴 돌아요. 소형견 친구 환영해요 🌸',
     location: { lat: 37.5640, lng: 126.8990 }, walkTimes: ['이른 아침', '저녁'],
     interests: ['독서', '베이킹', '요가'], art: { fur: '#FFFFFF', muzzle: '#FFFFFF', ear: 'floppy', earColor: '#F1E6DA', bg: '#F7E6EA', collar: '#EC4899' },
-    dog: { name: '몽이', breed: '말티즈', size: '소형', age: 2, energy: '보통', friendly: true, traits: ['애교쟁이', '겁 조금 많음'] },
+    dog: { name: '몽이', breed: '말티즈', size: '소형', age: 2, energy: '보통', friendly: true, traits: ['애교쟁이', '겁 조금 많음'], health: { vaccinated: true, neutered: false, bite: false, allergies: '' } },
+    verified: { phone: true, registry: false },
     likes: ['me'],
   },
   {
@@ -197,7 +200,8 @@ export const PEOPLE = [
     bio: '대형견이랑 살아요. 하늘공원 억새길 걷는 거 좋아합니다.',
     location: { lat: 37.5700, lng: 126.8880 }, walkTimes: ['이른 아침', '밤'],
     interests: ['요리', '캠핑', '등산'], art: { fur: '#E7B56E', muzzle: '#F6D9A8', ear: 'floppy', earColor: '#D69E52', bg: '#E4EBF5', collar: '#15803D' },
-    dog: { name: '하루', breed: '골든 리트리버', size: '대형', age: 5, energy: '활발', friendly: true, traits: ['순둥이', '수영 좋아함'] },
+    dog: { name: '하루', breed: '골든 리트리버', size: '대형', age: 5, energy: '활발', friendly: true, traits: ['순둥이', '수영 좋아함'], health: { vaccinated: true, neutered: true, bite: false, allergies: '' } },
+    verified: { phone: true, registry: true },
     likes: ['me'],
   },
   {
@@ -205,7 +209,8 @@ export const PEOPLE = [
     bio: '연남동 숲길 산책하고 카페 가는 루트 추천해 드릴게요!',
     location: { lat: 37.5620, lng: 126.9220 }, walkTimes: ['저녁'],
     interests: ['카페', '맛집', '사진'], art: { fur: '#FFFDF9', muzzle: '#FFFFFF', ear: 'floppy', earColor: '#F3ECE4', bg: '#ECE6F6', collar: '#8B5CF6' },
-    dog: { name: '두부', breed: '비숑 프리제', size: '소형', age: 1, energy: '활발', friendly: true, traits: ['솜사탕', '에너지 폭발'] },
+    dog: { name: '두부', breed: '비숑 프리제', size: '소형', age: 1, energy: '활발', friendly: true, traits: ['솜사탕', '에너지 폭발'], health: { vaccinated: false, neutered: false, bite: false, allergies: '' } },
+    verified: { phone: true, registry: false },
     likes: [],
   },
   {
@@ -213,7 +218,8 @@ export const PEOPLE = [
     bio: '조용히 걷는 산책 좋아해요. 아이가 낯을 가려서 천천히 친해져요.',
     location: { lat: 37.5480, lng: 126.9130 }, walkTimes: ['밤'],
     interests: ['독서', '음악', '전시'], art: { fur: '#C9A27A', muzzle: '#EFE2D2', ear: 'pointy', bg: '#E5EFEC', collar: '#0F766E' },
-    dog: { name: '단비', breed: '진돗개 믹스', size: '중형', age: 6, energy: '느긋', friendly: false, traits: ['의젓함', '낯가림'] },
+    dog: { name: '단비', breed: '진돗개 믹스', size: '중형', age: 6, energy: '느긋', friendly: false, traits: ['의젓함', '낯가림'], health: { vaccinated: true, neutered: true, bite: true, allergies: '소고기' } },
+    verified: { phone: true, registry: true },
     likes: ['me'],
   },
   {
@@ -221,7 +227,8 @@ export const PEOPLE = [
     bio: '교대 근무라 평일 낮 산책 가능해요. 대형견 친구 대환영!',
     location: { lat: 37.5580, lng: 126.8970 }, walkTimes: ['점심', '이른 아침'],
     interests: ['등산', '러닝', '맛집'], art: { fur: '#2E2A28', muzzle: '#FFFFFF', ear: 'floppy', earColor: '#2E2A28', bg: '#F5EEDC', collar: '#F59E0B', spot: '#FFFFFF' },
-    dog: { name: '태풍', breed: '보더 콜리', size: '대형', age: 3, energy: '활발', friendly: true, traits: ['천재견', '원반 마스터'] },
+    dog: { name: '태풍', breed: '보더 콜리', size: '대형', age: 3, energy: '활발', friendly: true, traits: ['천재견', '원반 마스터'], health: { vaccinated: true, neutered: true, bite: false, allergies: '' } },
+    verified: { phone: true, registry: false },
     likes: [],
   },
   {
@@ -229,7 +236,8 @@ export const PEOPLE = [
     bio: '산책하면서 강아지 사진 찍어드려요 📷 망원 근처 살아요.',
     location: { lat: 37.5540, lng: 126.9040 }, walkTimes: ['저녁', '점심'],
     interests: ['사진', '카페', '여행'], art: { fur: '#9B6B4A', muzzle: '#B98563', ear: 'floppy', earColor: '#7E5236', bg: '#F4E9E1', collar: '#0EA5E9' },
-    dog: { name: '쿠키', breed: '푸들', size: '소형', age: 4, energy: '보통', friendly: true, traits: ['모델견', '얌전함'] },
+    dog: { name: '쿠키', breed: '푸들', size: '소형', age: 4, energy: '보통', friendly: true, traits: ['모델견', '얌전함'], health: { vaccinated: true, neutered: true, bite: false, allergies: '밀가루' } },
+    verified: { phone: true, registry: true },
     likes: ['me'],
   },
 ];
@@ -246,6 +254,7 @@ export const DEFAULT_ME = {
     health: { vaccinated: false, neutered: false, bite: false, allergies: '' }, registryNo: '',
   },
   phone: '',
+  verified: { phone: false, registry: false },
 };
 
 // 동네 산책 모임 (5번 기능에서 채움)

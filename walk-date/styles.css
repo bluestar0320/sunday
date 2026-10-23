@@ -658,3 +658,20 @@ a.btn { text-decoration: none; }
 .sos-title { display: flex; align-items: center; gap: 8px; color: var(--danger); }
 .mk-me span { width: 20px; height: 20px; border-radius: 50%; background: #3B82F6; border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(59, 130, 246, .25), 0 2px 6px rgba(0,0,0,.3); }
 .mk-me { z-index: 3; }
+
+/* 건강 · 인증 */
+.badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.badges:empty { display: none; }
+.vbadge { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border-radius: 999px; background: #E6EEF9; color: #3D64A8; font-size: 12px; font-weight: 700; }
+@media (prefers-color-scheme: dark) { .vbadge { background: #1D2A3D; color: #9DBBEA; } }
+.health { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.hflag { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-sm); font-size: 13px; color: var(--text-2); }
+.hflag .ic { color: var(--muted); }
+.hflag.ok .ic { color: var(--safe); }
+.hflag.bad { background: var(--danger-soft); color: var(--danger); box-shadow: none; font-weight: 600; }
+.hflag.bad .ic { color: var(--danger); }
+.cautions { background: var(--warn-soft); border-radius: 24px; padding: 16px 18px; margin-top: 14px; }
+.cautions h4 { margin: 0 0 8px; display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--warn); }
+.cautions ul { margin: 0; padding-left: 18px; display: grid; gap: 5px; font-size: 14px; color: var(--text-2); }
+.notice.warn { background: var(--warn-soft); }
+.notice.warn .ic { color: var(--warn); }

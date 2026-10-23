@@ -23,7 +23,6 @@ export function freshState() {
     fired: [],        // 이미 보낸 예약 알림 id
     guardians: [],    // 안심 연락처 { id, name, phone }
     settings: { graceMin: 15, checkinMin: 20, deviceNotify: false },
-    verify: { phone: false, registry: false },
     groups: [],       // 내가 만든 모임
     joinedGroups: [], // 참여한 모임 id
     records: [],      // 산책 기록 { id, walkId, personId | groupId, courseId, date, km, minutes, photos, memo }
@@ -43,9 +42,8 @@ function load() {
         ...base, ...saved,
         filters: { ...base.filters, ...saved.filters },
         settings: { ...base.settings, ...saved.settings },
-        verify: { ...base.verify, ...saved.verify },
         penalties: { ...base.penalties, ...saved.penalties },
-        me: { ...base.me, ...saved.me, dog: { ...base.me.dog, ...saved.me?.dog, health: { ...base.me.dog.health, ...saved.me?.dog?.health } } },
+        me: { ...base.me, ...saved.me, verified: { ...base.me.verified, ...saved.me?.verified }, dog: { ...base.me.dog, ...saved.me?.dog, health: { ...base.me.dog.health, ...saved.me?.dog?.health } } },
       };
     }
   } catch { /* 저장소 사용 불가 시 새 상태로 시작 */ }

@@ -3,6 +3,7 @@ import {
   SIZES, ENERGY, TIME_SLOTS,
   rankCandidates, compatibility, recommendCourses, courseSafety, isMutualMatch,
   averageRating, walkStatus, ageFromBirthYear, midpoint, hazardSegments,
+  healthFlags, isVerified, validRegistryNo, normalizePhone,
 } from './logic.js';
 import { icon, dogArt, resizeImage, SAFETY_ICON, walkScene } from './ui.js';
 import { mountMap } from './map.js';
@@ -10,7 +11,7 @@ import { mountMap } from './map.js';
 import {
   $, view, state, route, save, resetState, esc, person, course, matchOf, photosOf, media, characterArt,
   toast, openModal, closeModal, DAYS, fmtDate, safeBadge, segHtml, chipsHtml, bindToggles, segVal, chipVals,
-  go, setTop, render, updateBadge, registerView, startTicker, isWalkDone,
+  go, setTop, render, updateBadge, registerView, startTicker, isWalkDone, switchHtml, notify,
 } from './core.js';
 import { startWalk, openGuardians, onWalkEnded, activeSession } from './safety.js';
 
@@ -173,6 +174,7 @@ function readPersonFields() {
 }
 
 function dogFields(dog) {
+  const h = dog.health || {};
   return `
     <div class="two">
       <div class="field"><label for="d-name">이름</label><input class="input" id="d-name" maxlength="10" value="${esc(dog.name)}" placeholder="예: 초코" /></div>
@@ -182,7 +184,12 @@ function dogFields(dog) {
     <div class="field"><label>크기</label>${segHtml('size', SIZES, dog.size)}</div>
     <div class="field"><label>산책 에너지</label>${segHtml('energy', ENERGY, dog.energy)}</div>
     <div class="field"><label>다른 강아지와는</label>${segHtml('friendly', ['금방 친해져요', '천천히 친해져요'], dog.friendly ? '금방 친해져요' : '천천히 친해져요')}</div>
-    <div class="field"><label for="d-traits">성격 (쉼표로 구분)</label><input class="input" id="d-traits" value="${esc(dog.traits.join(', '))}" placeholder="예: 애교쟁이, 간식 좋아함" /></div>`;
+    <div class="field"><label for="d-traits">성격 (쉼표로 구분)</label><input class="input" id="d-traits" value="${esc(dog.traits.join(', '))}" placeholder="예: 애교쟁이, 간식 좋아함" /></div>
+    <div class="label">${icon('syringe', 16)}건강 · 안전 정보 <span class="muted small" style="font-weight:400">만나기 전에 상대에게 보여져요</span></div>
+    <div class="field"><label>예방접종 (종합백신 · 광견병)</label>${segHtml('vaccinated', ['완료했어요', '진행 중이에요'], h.vaccinated ? '완료했어요' : '진행 중이에요')}</div>
+    <div class="field"><label>중성화</label>${segHtml('neutered', ['했어요', '안 했어요'], h.neutered ? '했어요' : '안 했어요')}</div>
+    <div class="field"><label>사람이나 강아지를 문 적이 있나요?</label>${segHtml('bite', ['없어요', '있어요'], h.bite ? '있어요' : '없어요')}</div>
+    <div class="field"><label for="d-allergy">간식 · 음식 알러지</label><input class="input" id="d-allergy" maxlength="20" value="${esc(h.allergies)}" placeholder="없으면 비워두세요 (예: 닭고기)" /></div>`;
 }
 function readDogFields() {
   const dog = state.me.dog;
@@ -192,9 +199,31 @@ function readDogFields() {
     name, age: Number($('#d-age').value) || 0, breed: $('#d-breed').value.trim() || '믹스견',
     size: segVal('size'), energy: segVal('energy'), friendly: segVal('friendly') === '금방 친해져요',
     traits: $('#d-traits').value.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 4),
+    health: {
+      vaccinated: segVal('vaccinated') === '완료했어요',
+      neutered: segVal('neutered') === '했어요',
+      bite: segVal('bite') === '있어요',
+      allergies: $('#d-allergy').value.trim(),
+    },
   });
   save();
   return true;
+}
+
+// ---------- 건강 · 인증 표시 ----------
+function badgesHtml(p) {
+  const v = p.verified || {};
+  return `${v.phone ? `<span class="vbadge">${icon('verified', 13)}본인 인증</span>` : ''}${v.registry ? `<span class="vbadge">${icon('verified', 13)}동물등록</span>` : ''}`;
+}
+
+const HEALTH_ICON = { vaccine: 'syringe', neuter: 'heart', bite: 'shield', allergy: 'alert' };
+function healthHtml(dog) {
+  return `<div class="health">${healthFlags(dog).map((f) => `<span class="hflag ${f.ok === false ? 'bad' : f.ok ? 'ok' : ''}">${icon(HEALTH_ICON[f.key], 14)}${esc(f.label)}</span>`).join('')}</div>`;
+}
+
+function cautionsHtml(list) {
+  if (!list.length) return '';
+  return `<div class="cautions"><h4>${icon('alert', 16)}만나기 전에 알아두세요</h4><ul>${list.map((c) => `<li>${esc(c)}</li>`).join('')}</ul></div>`;
 }
 
 // ---------- 탐색 ----------
@@ -252,13 +281,17 @@ function renderDiscover() {
             <div class="avatar">${esc(p.name[0])}</div>
             <div><div class="n">보호자 ${esc(p.name)}</div><div class="s">${ageFromBirthYear(p.birthYear)}세 · ${esc(p.job)}</div></div>
           </div>
+          <div class="badges">${badgesHtml(p)}</div>
           <p class="bio">${esc(p.bio)}</p>
           <div class="chips">
             ${p.dog.traits.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}
             <span class="tag">${p.dog.energy} 산책</span>
             ${p.walkTimes.map((t) => `<span class="tag">${icon('clock', 13)}${t}</span>`).join('')}
           </div>
+          <div class="label" style="margin-top:20px">${icon('syringe', 16)}${esc(p.dog.name)}의 건강 · 안전</div>
+          ${healthHtml(p.dog)}
           ${c.reasons.length ? `<div class="why"><h4>우리가 잘 맞는 이유</h4><ul>${c.reasons.map((r) => `<li>${icon('check', 16)}${esc(r)}</li>`).join('')}</ul></div>` : ''}
+          ${cautionsHtml(c.cautions)}
         </div>
       </article>
     </div>
@@ -354,12 +387,19 @@ function openFilters() {
       <input id="km" type="range" min="1" max="10" step="1" value="${f.maxKm}" /></div>
     <div class="field"><label>강아지 크기</label>${chipsHtml('sizes', SIZES, f.sizes)}</div>
     <div class="field"><label>만나고 싶은 사람</label>${segHtml('lookingFor', ['남성', '여성', '모두'], state.me.lookingFor)}</div>
+    <div class="stack" style="margin-bottom:20px">
+      <label class="switch-row">${icon('syringe', 22)}<div class="grow"><div class="t">예방접종 완료한 친구만</div><div class="d">접종이 끝나지 않은 아이는 숨겨요</div></div>${switchHtml('fVacc', f.vaccinatedOnly)}</label>
+      <label class="switch-row">${icon('verified', 22)}<div class="grow"><div class="t">인증 회원만</div><div class="d">본인 인증과 동물등록 인증을 모두 마친 보호자만</div></div>${switchHtml('fVerified', f.verifiedOnly)}</label>
+    </div>
     <button class="btn" id="apply">적용하기</button>`, (root) => {
     bindToggles(root);
     $('#km', root).oninput = (e) => { $('#kmv', root).textContent = `${e.target.value}km 이내`; };
     $('#apply', root).onclick = () => {
       const sizes = chipVals('sizes', root);
-      state.filters = { maxKm: Number($('#km', root).value), sizes: sizes.length ? sizes : [...SIZES] };
+      state.filters = {
+        maxKm: Number($('#km', root).value), sizes: sizes.length ? sizes : [...SIZES],
+        vaccinatedOnly: $('#fVacc', root).checked, verifiedOnly: $('#fVerified', root).checked,
+      };
       state.me.lookingFor = segVal('lookingFor', root);
       save(); closeModal(); render();
     };
@@ -521,6 +561,7 @@ function openProposal(p) {
   const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i + 1); return d; });
   const dayLabel = (d, i) => (i === 0 ? '내일' : `${d.getMonth() + 1}/${d.getDate()} ${DAYS[d.getDay()]}`);
   const ui = { slot: common[0] || p.walkTimes[0], day: 0, safeOnly: state.me.safeMode !== false, courseId: null };
+  const { cautions } = compatibility(state.me, p);
 
   openModal('', (root) => {
     const draw = () => {
@@ -542,6 +583,7 @@ function openProposal(p) {
         </label>
         ${ui.safeOnly && hiddenCount ? `<div class="hidden-note">${icon('eye', 16)}<span>${ui.slot}에 으슥한 코스 ${hiddenCount}곳을 숨겼어요</span><button id="showAll">모두 보기</button></div>` : ''}
         <div id="courses">${courses.length ? courses.map((c) => courseHtml(c, c.id === ui.courseId)).join('') : '<p class="muted small">이 시간대에 추천할 만한 안심 코스가 없어요. 다른 시간대를 골라보세요.</p>'}</div>
+        ${cautions.length ? `<div class="notice warn" style="margin-bottom:10px">${icon('alert', 18)}<span>${cautions.map(esc).join('<br/>')}</span></div>` : ''}
         <div class="notice">${icon('shield', 18)}<span>첫 만남은 밝은 시간, 사람이 많은 곳을 추천해요. 약속 정보를 지인에게 공유해 두면 더 안심이에요.</span></div>
         <div class="sheet-foot"><button class="btn accent" id="send" ${ui.courseId ? '' : 'disabled'}>산책 제안 보내기</button></div>`;
       root.scrollTop = scroll;
@@ -775,6 +817,55 @@ function openReview(w) {
   });
 }
 
+// ---------- 인증 (데모) ----------
+// 실서비스에서는 통신사 본인확인(PASS 등)과 국가동물보호정보시스템 조회로 대체
+function openPhoneVerify() {
+  const me = state.me;
+  openModal(`
+    <h3>본인 인증</h3>
+    <p class="desc">휴대폰 번호로 본인 인증을 해요. 번호는 상대에게 보이지 않아요.</p>
+    <div class="field"><label for="v-phone">휴대폰 번호</label><input class="input" id="v-phone" inputmode="tel" value="${esc(me.phone)}" placeholder="010-1234-5678" /></div>
+    <button class="btn outline" id="v-send">인증번호 받기</button>
+    <div id="v-code-wrap" hidden style="margin-top:16px">
+      <div class="field"><label for="v-code">인증번호 6자리</label><input class="input" id="v-code" inputmode="numeric" maxlength="6" /></div>
+      <p class="muted small" style="margin:-8px 0 16px">데모라서 실제 문자는 가지 않아요. 인증번호는 <b>123456</b>이에요.</p>
+      <button class="btn accent" id="v-ok">인증 완료</button>
+    </div>`, (root) => {
+    $('#v-send', root).onclick = () => {
+      const phone = normalizePhone($('#v-phone', root).value);
+      if (!phone) { toast('휴대폰 번호를 확인해 주세요'); return; }
+      me.phone = phone;
+      $('#v-code-wrap', root).hidden = false;
+      toast('인증번호를 보냈어요 (데모: 123456)');
+    };
+    $('#v-ok', root).onclick = () => {
+      if ($('#v-code', root).value !== '123456') { toast('인증번호가 맞지 않아요'); return; }
+      me.verified.phone = true;
+      save(); closeModal(); render();
+      notify('본인 인증을 완료했어요', { kind: 'info', device: false });
+    };
+  });
+}
+
+function openRegistryVerify() {
+  const me = state.me;
+  openModal(`
+    <h3>동물등록 인증</h3>
+    <p class="desc">${esc(me.dog.name)}의 동물등록번호(15자리)를 입력해 주세요. 등록증이나 내장칩 정보에서 확인할 수 있어요.</p>
+    <div class="field"><label for="v-reg">동물등록번호</label><input class="input" id="v-reg" inputmode="numeric" maxlength="19" value="${esc(me.dog.registryNo)}" placeholder="410 1000 1234 5678" /></div>
+    <p class="muted small" style="margin:-8px 0 16px">데모에서는 15자리 숫자면 인증돼요. 실제 서비스에서는 국가동물보호정보시스템에서 조회해요.</p>
+    <button class="btn accent" id="v-ok">인증하기</button>`, (root) => {
+    $('#v-ok', root).onclick = () => {
+      const no = $('#v-reg', root).value.replace(/\s|-/g, '');
+      if (!validRegistryNo(no)) { toast('15자리 숫자를 입력해 주세요'); return; }
+      me.dog.registryNo = no;
+      me.verified.registry = true;
+      save(); closeModal(); render();
+      notify('동물등록 인증을 완료했어요', { kind: 'info', device: false });
+    };
+  });
+}
+
 // ---------- 내 프로필 ----------
 function renderProfile() {
   setTop('MY');
@@ -790,6 +881,7 @@ function renderProfile() {
         <div class="n">${esc(me.dog.name)} <span class="muted" style="font-weight:500;font-size:16px">${me.dog.age}살</span></div>
         <div class="s">${esc(me.dog.breed)} · ${me.dog.size}견 · ${me.dog.energy}</div>
         <div class="s">보호자 ${esc(me.name)} · ${ageFromBirthYear(me.birthYear)}세${me.job ? ` · ${esc(me.job)}` : ''}</div>
+        <div class="badges" style="margin-top:8px">${badgesHtml(me) || '<span class="muted small">아직 인증 전이에요</span>'}</div>
       </div>
     </div>
     <div class="stats">
@@ -800,6 +892,13 @@ function renderProfile() {
 
     <div class="label">사진 <span class="muted small" style="font-weight:400">첫 번째 사진이 대표 사진이에요</span></div>
     ${photoGridHtml()}
+
+    <div class="label">${icon('syringe', 16)}${esc(me.dog.name)}의 건강 · 안전</div>
+    ${healthHtml(me.dog)}
+
+    <div class="label">${icon('verified', 16)}인증 <span class="muted small" style="font-weight:400">인증하면 배지가 붙고 '인증 회원만' 필터에도 보여요</span></div>
+    <button class="menu-item" id="vPhone">${icon('phone', 20)}<span class="grow" style="text-align:left">본인 인증 (휴대폰)</span>${me.verified.phone ? '<span class="vbadge">완료</span>' : '<span class="muted small">인증하기 ›</span>'}</button>
+    <button class="menu-item" id="vRegistry">${icon('paw', 20)}<span class="grow" style="text-align:left">동물등록 인증</span>${me.verified.registry ? '<span class="vbadge">완료</span>' : '<span class="muted small">인증하기 ›</span>'}</button>
 
     <div class="label">안전</div>
     <label class="switch-row">
@@ -817,6 +916,8 @@ function renderProfile() {
   bindPhotoGrid(view, () => { $('.me-head .thumb').innerHTML = media(me); });
   $('#safeMode').onchange = (e) => { me.safeMode = e.target.checked; save(); toast(e.target.checked ? '안심 코스만 추천할게요' : '모든 코스를 추천할게요'); };
   $('#guardians').onclick = () => openGuardians(() => render());
+  $('#vPhone').onclick = openPhoneVerify;
+  $('#vRegistry').onclick = openRegistryVerify;
   $('#editMe').onclick = () => openModal(`<h3>보호자 정보</h3><div style="height:16px"></div>${personFields(me)}<div class="sheet-foot"><button class="btn" id="save">저장</button></div>`, (root) => {
     bindToggles(root);
     $('#save', root).onclick = () => { if (readPersonFields()) { closeModal(); render(); toast('저장했어요'); } };
