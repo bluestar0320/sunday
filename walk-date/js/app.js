@@ -2,9 +2,10 @@ import { PEOPLE, COURSES, DEFAULT_ME, INTERESTS, AUTO_REPLIES } from './data.js'
 import {
   SIZES, ENERGY, TIME_SLOTS,
   rankCandidates, compatibility, recommendCourses, courseSafety, isMutualMatch,
-  averageRating, walkStatus, ageFromBirthYear, midpoint, hazardSegments,
+  walkStatus, ageFromBirthYear, midpoint, hazardSegments,
   healthFlags, isVerified, validRegistryNo, normalizePhone,
   forecastFor, respondToProposal, reminderTimes, dueReminders, dueLikeBacks, recordStats,
+  mannerSummary, mannerFromReviews, isLateCancel, relativeDay,
 } from './logic.js';
 import { icon, dogArt, resizeImage, SAFETY_ICON, walkScene } from './ui.js';
 import { mountMap } from './map.js';
@@ -12,7 +13,7 @@ import { mountMap } from './map.js';
 import {
   $, view, state, route, save, resetState, esc, person, course, matchOf, photosOf, media, characterArt,
   toast, openModal, closeModal, DAYS, fmtDate, safeBadge, segHtml, chipsHtml, bindToggles, segVal, chipVals,
-  go, setTop, render, updateBadge, registerView, startTicker, isWalkDone, switchHtml, notify, uid, onTick, walkWho, likesForMe, groupById,
+  go, setTop, render, updateBadge, registerView, startTicker, isWalkDone, switchHtml, notify, uid, onTick, walkWho, likesForMe, groupById, mannerOf, withManner,
 } from './core.js';
 import { startWalk, openGuardians, onWalkEnded, activeSession } from './safety.js';
 import { renderGroups, openGroup, membersOf } from './groups.js';
@@ -226,6 +227,19 @@ function healthHtml(dog) {
   return `<div class="health">${healthFlags(dog).map((f) => `<span class="hflag ${f.ok === false ? 'bad' : f.ok ? 'ok' : ''}">${icon(HEALTH_ICON[f.key], 14)}${esc(f.label)}</span>`).join('')}</div>`;
 }
 
+function mannerHtml(m, { mine = false } = {}) {
+  const s = mannerSummary(m);
+  if (!s.count && !s.warning) return `<div class="manner empty-m">${icon('star', 16)}<span>${mine ? '아직 받은 매너 평가가 없어요' : '아직 받은 매너 평가가 없는 새 친구예요'}</span></div>`;
+  return `<div class="manner">
+    <div class="m-top">
+      ${s.count ? `<span class="m-score">${icon('star', 18, 'filled')}<b>${s.avg}</b><span>(${s.count}개)</span></span>` : ''}
+      ${s.badge ? `<span class="vbadge good">${icon('verified', 13)}${s.badge}</span>` : ''}
+      ${s.warning ? `<span class="vbadge bad">${icon('alert', 13)}${s.warning}</span>` : ''}
+    </div>
+    ${s.topTags.length ? `<div class="chips" style="margin-top:10px">${s.topTags.map((t) => `<span class="tag">${esc(t.tag)} <b>${t.n}</b></span>`).join('')}</div>` : ''}
+  </div>`;
+}
+
 function cautionsHtml(list) {
   if (!list.length) return '';
   return `<div class="cautions"><h4>${icon('alert', 16)}만나기 전에 알아두세요</h4><ul>${list.map((c) => `<li>${esc(c)}</li>`).join('')}</ul></div>`;
@@ -260,7 +274,9 @@ function profileHtml(p, c) {
         <span class="tag">${p.dog.energy} 산책</span>
         ${p.walkTimes.map((t) => `<span class="tag">${icon('clock', 13)}${t}</span>`).join('')}
       </div>
-      <div class="label" style="margin-top:20px">${icon('syringe', 16)}${esc(p.dog.name)}의 건강 · 안전</div>
+      <div class="label" style="margin-top:20px">${icon('star', 16)}받은 매너 평가</div>
+      ${mannerHtml(mannerOf(person(p.id)))}
+      <div class="label">${icon('syringe', 16)}${esc(p.dog.name)}의 건강 · 안전</div>
       ${healthHtml(p.dog)}
       ${c.reasons.length ? `<div class="why"><h4>우리가 잘 맞는 이유</h4><ul>${c.reasons.map((r) => `<li>${icon('check', 16)}${esc(r)}</li>`).join('')}</ul></div>` : ''}
       ${cautionsHtml(c.cautions)}
@@ -283,7 +299,7 @@ function bindSlides(root, p) {
 
 // ---------- 탐색 ----------
 function candidates() {
-  return rankCandidates(state.me, PEOPLE.filter((p) => !state.blocked.includes(p.id)), {
+  return rankCandidates(state.me, PEOPLE.filter((p) => !state.blocked.includes(p.id)).map(withManner), {
     ...state.filters, seen: state.seen,
   });
 }
@@ -916,7 +932,7 @@ export function renderWalks() {
     let actions;
     if (done) {
       actions = w.review
-        ? `<button class="btn soft sm grow" disabled>평가 완료 · ${w.review.rating}점</button>`
+        ? `<button class="btn soft sm grow" disabled>${w.review.noShow ? '노쇼 신고함' : `평가 완료 · ${w.review.rating}점`}</button>`
         : `<button class="btn sm grow" data-review="${w.id}">매너 평가</button>`;
     } else if (theirTurn) {
       actions = `<button class="btn sm accent grow" data-w-accept="${w.id}">수락</button>
@@ -956,7 +972,11 @@ export function renderWalks() {
   view.querySelectorAll('[data-cancel]').forEach((b) => {
     b.onclick = () => {
       const w = state.walks.find((x) => x.id === b.dataset.cancel);
-      if (!confirm(w.status === 'pending' ? '산책 제안을 취소할까요?' : '산책 약속을 취소할까요?')) return;
+      const late = isLateCancel(w);
+      const msg = w.status === 'pending' ? '산책 제안을 취소할까요?'
+        : late ? '약속 3시간 전 이내 취소예요.\n늦은 취소는 내 매너 평가에 기록되고, 상대에게도 알림이 가요. 그래도 취소할까요?' : '산책 약속을 취소할까요?';
+      if (!confirm(msg)) return;
+      if (late) state.penalties.lateCancels += 1;
       w.status = 'cancelled';
       save();
       pushMsg(w.personId, { from: 'system', text: '산책 약속이 취소됐어요' });
@@ -970,6 +990,7 @@ export function renderWalks() {
       w.datetime = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
       w.completedAt = Date.now();
       createRecord(w);
+      receiveReviewLater(w);
       save();
       renderWalks();
       if (w.personId) openReview(w);
@@ -1009,20 +1030,44 @@ const REVIEW_TAGS = ['시간 약속을 잘 지켜요', '대화가 즐거워요',
 function openReview(w) {
   const p = person(w.personId);
   let rating = 5;
+  let met = true;
   openModal(`
     <h3>${esc(p.name)}님과의 산책은 어땠나요?</h3>
     <p class="desc">${esc(course(w.courseId).name)} · ${fmtDate(w.datetime)}</p>
-    <div class="stars" id="stars">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" class="on" aria-label="${n}점">${icon('star', 36)}</button>`).join('')}</div>
-    <div class="field"><label>좋았던 점</label>${chipsHtml('tags', REVIEW_TAGS, [])}</div>
-    <div class="field"><label>다시 만나고 싶나요?</label>${segHtml('again', ['또 만나고 싶어요', '친구로 지낼래요'], '또 만나고 싶어요')}</div>
+    ${segHtml('met', ['만나서 산책했어요', '상대가 오지 않았어요'], '만나서 산책했어요')}
+    <div id="metFields">
+      <div class="stars" id="stars">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" class="on" aria-label="${n}점">${icon('star', 36)}</button>`).join('')}</div>
+      <div class="field"><label>좋았던 점</label>${chipsHtml('tags', REVIEW_TAGS, [])}</div>
+      <div class="field"><label>다시 만나고 싶나요?</label>${segHtml('again', ['또 만나고 싶어요', '친구로 지낼래요'], '또 만나고 싶어요')}</div>
+    </div>
+    <div id="noShowFields" hidden>
+      <div class="notice warn" style="margin:18px 0">${icon('alert', 18)}<span>노쇼로 신고하면 상대의 매너 평가에 반영돼요. 노쇼가 2번 쌓이면 추천과 산책 제안이 제한돼요. 상대에게 신고한 사람은 알려지지 않아요.</span></div>
+    </div>
     <button class="btn" id="submit">평가 남기기</button>`, (root) => {
-    bindToggles(root);
+    bindToggles(root, (name, v) => {
+      if (name !== 'met') return;
+      met = v === '만나서 산책했어요';
+      $('#metFields', root).hidden = !met;
+      $('#noShowFields', root).hidden = met;
+      $('#submit', root).textContent = met ? '평가 남기기' : '노쇼 신고하기';
+    });
     $('#stars', root).onclick = (e) => {
       const b = e.target.closest('button'); if (!b) return;
       rating = Number(b.dataset.n);
       root.querySelectorAll('#stars button').forEach((x) => x.classList.toggle('on', Number(x.dataset.n) <= rating));
     };
     $('#submit', root).onclick = () => {
+      if (!met) {
+        w.review = { noShow: true, rating: 0, tags: [] };
+        state.noShowReports[p.id] = (state.noShowReports[p.id] || 0) + 1;
+        state.records = state.records.filter((r) => r.walkId !== w.id); // 만나지 못한 산책은 기록에서 뺀다
+        save();
+        closeModal();
+        renderWalks();
+        const restricted = mannerSummary(mannerOf(p)).restricted;
+        notify(restricted ? `${p.name}님은 노쇼가 반복돼 추천과 제안이 제한돼요` : '노쇼 신고가 접수됐어요. 매너 평가에 반영할게요', { kind: 'manner', device: false });
+        return;
+      }
       w.review = { rating, tags: chipVals('tags', root), again: segVal('again', root) };
       save();
       closeModal();
@@ -1030,6 +1075,21 @@ function openReview(w) {
       if (!offerSecondWalk(w, w.review)) toast('평가를 남겼어요. 감사합니다!');
     };
   });
+}
+
+// 데모: 함께 걸은 상대도 잠시 뒤 나에게 매너 평가를 남긴다
+function receiveReviewLater(w) {
+  if (!w.personId || state.received.some((r) => r.walkId === w.id)) return;
+  const p = person(w.personId);
+  setTimeout(() => {
+    if (w.review?.noShow) return; // 만나지 못한 산책은 평가가 오지 않는다
+    const onTime = !w.session || w.session.events.every((e) => e.kind !== 'alert');
+    const pool = ['시간 약속을 잘 지켜요', '대화가 즐거워요', '강아지를 잘 케어해요', '매너가 좋아요', '또 산책하고 싶어요'];
+    const tags = pool.filter((_, i) => (p.id.charCodeAt(1) + i) % 2 === 0).slice(0, onTime ? 3 : 1);
+    state.received.unshift({ walkId: w.id, from: p.id, rating: onTime ? 5 : 4, tags, at: Date.now() });
+    save();
+    notify(`${p.name}님이 매너 평가를 남겼어요 ★${onTime ? 5 : 4}`, { kind: 'manner', to: { name: 'profile' } });
+  }, 4000);
 }
 
 // ---------- 인증 (데모) ----------
@@ -1085,8 +1145,7 @@ function openRegistryVerify() {
 function renderProfile() {
   setTop('MY');
   const me = state.me;
-  const reviews = state.walks.filter((w) => w.review).map((w) => w.review);
-  const avg = averageRating(reviews);
+  const myManner = mannerFromReviews(state.received, state.penalties);
   const walksDone = state.walks.filter((w) => isWalkDone(w)).length;
 
   view.innerHTML = `
@@ -1104,6 +1163,11 @@ function renderProfile() {
       <div><b>${walksDone}</b><span>함께한 산책</span></div>
       <div><b>${recordStats(state.records).km}</b><span>함께 걸은 km</span></div>
     </div>
+
+    <div class="label">${icon('star', 16)}내가 받은 매너 평가</div>
+    ${mannerHtml(myManner, { mine: true })}
+    ${state.received.length ? `<div class="stack" style="margin-top:10px">${state.received.slice(0, 3).map((r) => `<div class="menu-item received">${icon('star', 18, 'filled')}<span class="grow"><b>★${r.rating}</b> <span class="muted small">${esc(person(r.from).name)}님 · ${r.tags.map(esc).join(', ')}</span></span></div>`).join('')}</div>` : ''}
+    <p class="muted small" style="margin:10px 4px 0">약속 3시간 전 이내 취소 ${state.penalties.lateCancels}회 · 노쇼 ${state.penalties.noShows}회. 노쇼가 2번 쌓이면 추천과 산책 제안이 제한돼요.</p>
 
     <div class="label">사진 <span class="muted small" style="font-weight:400">첫 번째 사진이 대표 사진이에요</span></div>
     ${photoGridHtml()}
@@ -1183,7 +1247,7 @@ onTick((now) => {
     const f = forecastFor(w.datetime);
     const rain = f.rainy ? ` · 비 예보 ${f.rainProb}%` : '';
     notify(r.kind === 'day'
-      ? `내일 ${fmtDate(w.datetime).replace(/^.*\) /, '')} ${w.groupId ? `'${who}' 모임 산책이 있어요` : `${who}님과 산책 약속이 있어요`}${rain}`
+      ? `${relativeDay(w.datetime)} ${fmtDate(w.datetime).replace(/^.*\) /, '')} ${w.groupId ? `'${who}' 모임 산책이 있어요` : `${who}님과 산책 약속이 있어요`}${rain}`
       : `1시간 뒤 ${course(w.courseId).name}에서 산책이에요. 출발할 때 안심 산책을 켜 주세요`, { kind: 'reminder', to: { name: 'walks' } });
   });
   if (due.length) save();
@@ -1191,6 +1255,7 @@ onTick((now) => {
 
 onWalkEnded((w) => {
   createRecord(w);
+  receiveReviewLater(w);
   setTimeout(() => {
     go('walks');
     if (w.personId && !w.review) openReview(w);

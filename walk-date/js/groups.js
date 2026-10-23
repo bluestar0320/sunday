@@ -1,6 +1,6 @@
 // 동네 산책 모임: 1:1보다 부담이 적은 3~6명 그룹 산책
 import { PEOPLE, COURSES, GROUPS } from './data.js';
-import { TIME_SLOTS, SIZES, courseSafety, groupFit, forecastFor } from './logic.js';
+import { TIME_SLOTS, SIZES, courseSafety, groupFit, forecastFor, mannerSummary } from './logic.js';
 import {
   $, state, save, esc, person, course, media, toast, openModal, closeModal, fmtDate, safeBadge, uid,
   segHtml, bindToggles, segVal, groupById, notify, onTick, DAYS,
@@ -170,7 +170,7 @@ onTick((now) => {
     const joined = g.members.filter((id) => id !== 'me');
     if (joined.length >= 2 || g.members.length >= g.capacity) continue;
     if (now - (g.lastJoinAt || g.createdAt) < 10000) continue;
-    const next = PEOPLE.find((p) => !g.members.includes(p.id) && !state.blocked.includes(p.id) && (g.sizeRule === '모두' || p.dog.size === g.sizeRule));
+    const next = PEOPLE.find((p) => !g.members.includes(p.id) && !state.blocked.includes(p.id) && !mannerSummary(p.manner).restricted && (g.sizeRule === '모두' || p.dog.size === g.sizeRule));
     if (!next) continue;
     g.members.push(next.id);
     g.lastJoinAt = now;

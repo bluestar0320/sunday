@@ -740,3 +740,15 @@ button.tag.rainy .ic { color: #4F7EA3; }
 .rec-photos img { width: 72px; height: 72px; border-radius: 14px; object-fit: cover; flex-shrink: 0; }
 .rec-memo { margin: 0 2px 12px; font-size: 14px; line-height: 1.6; color: var(--text-2); }
 .walk-tabs .seg button { font-size: 13px; }
+
+/* 매너 평가 */
+.manner { padding: 16px 18px; border-radius: 24px; background: var(--surface); box-shadow: var(--shadow-sm); }
+.manner.empty-m { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
+.m-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.m-score { display: inline-flex; align-items: center; gap: 4px; color: #F2B544; }
+.m-score b { color: var(--text); font-size: 20px; }
+.m-score span { color: var(--muted); font-size: 13px; }
+.manner .tag b { margin-left: 2px; }
+.vbadge.good { background: var(--safe-soft); color: var(--safe); }
+.vbadge.bad { background: var(--danger-soft); color: var(--danger); }
+.menu-item.received .ic { color: #F2B544; }

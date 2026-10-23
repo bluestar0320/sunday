@@ -1,6 +1,6 @@
 // 앱 전체가 함께 쓰는 상태·저장·화면 전환·공통 UI
 import { PEOPLE, COURSES, DEFAULT_ME, GROUPS } from './data.js';
-import { SIZES, receivedLikes } from './logic.js';
+import { SIZES, receivedLikes, mannerSummary } from './logic.js';
 import { icon, dogArt } from './ui.js';
 
 const STORAGE_KEY = 'walkdate:v2';
@@ -142,9 +142,13 @@ export function safeBadge(level) {
   return `<span class="safe-badge lv-${level}">${icon(level === '주의' ? 'alert' : 'shield', 13)}${level}</span>`;
 }
 
+// 샘플 매너 정보 + 내가 신고한 노쇼
+export const mannerOf = (p) => ({ ...(p.manner || {}), noShows: (p.manner?.noShows || 0) + (state.noShowReports[p.id] || 0) });
+export const withManner = (p) => ({ ...p, manner: mannerOf(p) });
+
 export const likesForMe = () => (state.onboarded ? receivedLikes(state.me, PEOPLE, {
   matched: state.matches.map((m) => m.personId), passed: state.passed, blocked: state.blocked,
-}).filter((p) => state.me.lookingFor === '모두' || p.gender === state.me.lookingFor) : []);
+}).filter((p) => (state.me.lookingFor === '모두' || p.gender === state.me.lookingFor) && !mannerSummary(mannerOf(p)).restricted) : []);
 
 // ---------- 폼 토글 ----------
 export function segHtml(name, options, value) {

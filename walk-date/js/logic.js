@@ -87,6 +87,7 @@ export function rankCandidates(me, people, { maxKm = 5, sizes = SIZES, seen = []
   const seenSet = new Set(seen);
   return people
     .filter((p) => p.id !== me.id && !seenSet.has(p.id))
+    .filter((p) => !mannerSummary(p.manner).restricted) // 노쇼가 반복된 사람은 추천하지 않음
     .filter((p) => !vaccinatedOnly || p.dog.health?.vaccinated)
     .filter((p) => !verifiedOnly || isVerified(p))
     .filter((p) => !me.lookingFor || me.lookingFor === '모두' || p.gender === me.lookingFor)
@@ -324,7 +325,16 @@ export function dueReminders(walks, fired, now) {
   return walks
     .filter((w) => w.status === 'confirmed' && !w.completedAt && now < new Date(w.datetime).getTime())
     .flatMap((w) => reminderTimes(w).map((r) => ({ ...r, walk: w })))
-    .filter((r) => r.at <= now && !done.has(r.key));
+    .filter((r) => r.at <= now && !done.has(r.key))
+    // 약속이 3시간도 안 남았으면 '전날 알림'은 건너뛴다 (1시간 전 알림만)
+    .filter((r) => r.kind !== 'day' || new Date(r.walk.datetime).getTime() - now > 3 * 3600000);
+}
+
+// 알림 문구용: 오늘 / 내일 / 10월 25일
+export function relativeDay(date, now = new Date()) {
+  const d = new Date(date);
+  const diff = Math.round((new Date(d.toDateString()) - new Date(new Date(now).toDateString())) / 86400000);
+  return diff === 0 ? '오늘' : diff === 1 ? '내일' : `${d.getMonth() + 1}월 ${d.getDate()}일`;
 }
 
 // ---------- 받은 좋아요 ----------
@@ -381,3 +391,34 @@ export function recordStats(records) {
     friends: new Set(records.map((r) => r.personId).filter(Boolean)).size,
   };
 }
+
+// ---------- 매너 평가 ----------
+// m: { count, avg, tags: { 태그: 횟수 }, noShows, lateCancels }
+export function mannerSummary(m = {}) {
+  const count = m.count || 0;
+  const noShows = m.noShows || 0;
+  const lateCancels = m.lateCancels || 0;
+  const avg = count ? Math.round(m.avg * 10) / 10 : null;
+  const topTags = Object.entries(m.tags || {}).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([tag, n]) => ({ tag, n }));
+  return {
+    count, avg, topTags, noShows, lateCancels,
+    badge: avg !== null && avg >= 4.5 && count >= 5 && noShows === 0 ? '매너 우수' : null,
+    warning: noShows ? `노쇼 ${noShows}회` : lateCancels >= 2 ? `늦은 취소 ${lateCancels}회` : null,
+    restricted: noShows >= 2, // 노쇼 2회부터 추천·제안 제한
+  };
+}
+
+// 받은 평가 목록 → 요약 입력값
+export function mannerFromReviews(reviews, penalties = {}) {
+  const tags = {};
+  reviews.forEach((r) => r.tags.forEach((t) => { tags[t] = (tags[t] || 0) + 1; }));
+  return {
+    count: reviews.length,
+    avg: reviews.length ? reviews.reduce((a, r) => a + r.rating, 0) / reviews.length : 0,
+    tags, noShows: penalties.noShows || 0, lateCancels: penalties.lateCancels || 0,
+  };
+}
+
+// 확정된 약속을 시작 3시간 이내에 취소하면 늦은 취소
+export const isLateCancel = (walk, now = Date.now()) => walk.status === 'confirmed'
+  && new Date(walk.datetime).getTime() - now < 3 * 3600000;

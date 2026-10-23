@@ -175,6 +175,7 @@ export const PEOPLE = [
     interests: ['카페', '사진', '전시'], art: { fur: '#E0A061', muzzle: '#FFF3E4', ear: 'pointy', bg: '#F6E7D8', collar: '#3B82F6' },
     dog: { name: '보리', breed: '웰시코기', size: '중형', age: 3, energy: '활발', friendly: true, traits: ['사람 좋아함', '공놀이 광'], health: { vaccinated: true, neutered: true, bite: false, allergies: '' } },
     verified: { phone: true, registry: true },
+    manner: { count: 12, avg: 4.9, tags: { '시간 약속을 잘 지켜요': 10, '대화가 즐거워요': 8, '강아지를 잘 케어해요': 6 }, noShows: 0, lateCancels: 0 },
     likes: ['me'],
   },
   {
@@ -184,6 +185,7 @@ export const PEOPLE = [
     interests: ['러닝', '캠핑', '보드게임'], art: { fur: '#D98E4E', muzzle: '#FBEBD9', ear: 'pointy', bg: '#EAF0E6', collar: '#DC2626' },
     dog: { name: '콩이', breed: '시바견', size: '중형', age: 4, energy: '보통', friendly: true, traits: ['독립적', '간식에 진심'], health: { vaccinated: true, neutered: true, bite: false, allergies: '닭고기' } },
     verified: { phone: true, registry: true },
+    manner: { count: 7, avg: 4.6, tags: { '매너가 좋아요': 6, '시간 약속을 잘 지켜요': 5 }, noShows: 0, lateCancels: 1 },
     likes: [],
     likesBack: true, // 데모: 내가 좋아요를 보내면 잠시 뒤 좋아요로 답함
   },
@@ -194,6 +196,7 @@ export const PEOPLE = [
     interests: ['독서', '베이킹', '요가'], art: { fur: '#FFFFFF', muzzle: '#FFFFFF', ear: 'floppy', earColor: '#F1E6DA', bg: '#F7E6EA', collar: '#EC4899' },
     dog: { name: '몽이', breed: '말티즈', size: '소형', age: 2, energy: '보통', friendly: true, traits: ['애교쟁이', '겁 조금 많음'], health: { vaccinated: true, neutered: false, bite: false, allergies: '' } },
     verified: { phone: true, registry: false },
+    manner: { count: 3, avg: 5, tags: { '강아지를 잘 케어해요': 3, '대화가 즐거워요': 2 }, noShows: 0, lateCancels: 0 },
     likes: ['me'],
   },
   {
@@ -203,6 +206,7 @@ export const PEOPLE = [
     interests: ['요리', '캠핑', '등산'], art: { fur: '#E7B56E', muzzle: '#F6D9A8', ear: 'floppy', earColor: '#D69E52', bg: '#E4EBF5', collar: '#15803D' },
     dog: { name: '하루', breed: '골든 리트리버', size: '대형', age: 5, energy: '활발', friendly: true, traits: ['순둥이', '수영 좋아함'], health: { vaccinated: true, neutered: true, bite: false, allergies: '' } },
     verified: { phone: true, registry: true },
+    manner: { count: 18, avg: 4.8, tags: { '또 산책하고 싶어요': 14, '매너가 좋아요': 12, '강아지를 잘 케어해요': 9 }, noShows: 0, lateCancels: 0 },
     likes: ['me'],
   },
   {
@@ -212,6 +216,7 @@ export const PEOPLE = [
     interests: ['카페', '맛집', '사진'], art: { fur: '#FFFDF9', muzzle: '#FFFFFF', ear: 'floppy', earColor: '#F3ECE4', bg: '#ECE6F6', collar: '#8B5CF6' },
     dog: { name: '두부', breed: '비숑 프리제', size: '소형', age: 1, energy: '활발', friendly: true, traits: ['솜사탕', '에너지 폭발'], health: { vaccinated: false, neutered: false, bite: false, allergies: '' } },
     verified: { phone: true, registry: false },
+    manner: { count: 0, avg: 0, tags: {}, noShows: 0, lateCancels: 0 },
     likes: [],
     likesBack: true, // 데모: 내가 좋아요를 보내면 잠시 뒤 좋아요로 답함
   },
@@ -222,6 +227,7 @@ export const PEOPLE = [
     interests: ['독서', '음악', '전시'], art: { fur: '#C9A27A', muzzle: '#EFE2D2', ear: 'pointy', bg: '#E5EFEC', collar: '#0F766E' },
     dog: { name: '단비', breed: '진돗개 믹스', size: '중형', age: 6, energy: '느긋', friendly: false, traits: ['의젓함', '낯가림'], health: { vaccinated: true, neutered: true, bite: true, allergies: '소고기' } },
     verified: { phone: true, registry: true },
+    manner: { count: 9, avg: 4.3, tags: { '시간 약속을 잘 지켜요': 7, '매너가 좋아요': 5 }, noShows: 1, lateCancels: 0 },
     likes: ['me'],
   },
   {
@@ -231,6 +237,7 @@ export const PEOPLE = [
     interests: ['등산', '러닝', '맛집'], art: { fur: '#2E2A28', muzzle: '#FFFFFF', ear: 'floppy', earColor: '#2E2A28', bg: '#F5EEDC', collar: '#F59E0B', spot: '#FFFFFF' },
     dog: { name: '태풍', breed: '보더 콜리', size: '대형', age: 3, energy: '활발', friendly: true, traits: ['천재견', '원반 마스터'], health: { vaccinated: true, neutered: true, bite: false, allergies: '' } },
     verified: { phone: true, registry: false },
+    manner: { count: 6, avg: 4.7, tags: { '대화가 즐거워요': 5, '또 산책하고 싶어요': 4 }, noShows: 0, lateCancels: 2 },
     likes: [],
   },
   {
@@ -240,6 +247,17 @@ export const PEOPLE = [
     interests: ['사진', '카페', '여행'], art: { fur: '#9B6B4A', muzzle: '#B98563', ear: 'floppy', earColor: '#7E5236', bg: '#F4E9E1', collar: '#0EA5E9' },
     dog: { name: '쿠키', breed: '푸들', size: '소형', age: 4, energy: '보통', friendly: true, traits: ['모델견', '얌전함'], health: { vaccinated: true, neutered: true, bite: false, allergies: '밀가루' } },
     verified: { phone: true, registry: true },
+    manner: { count: 15, avg: 4.9, tags: { '대화가 즐거워요': 11, '시간 약속을 잘 지켜요': 10, '또 산책하고 싶어요': 9 }, noShows: 0, lateCancels: 0 },
+    likes: ['me'],
+  },
+  {
+    id: 'p9', name: '현우', gender: '남성', birthYear: 1994, job: '영업직',
+    bio: '주말마다 한강 나가요.',
+    location: { lat: 37.5550, lng: 126.9060 }, walkTimes: ['저녁'],
+    interests: ['카페'], art: { fur: '#BFA58A', muzzle: '#F1E6D8', ear: 'pointy', bg: '#EDEDE6', collar: '#64748B' },
+    dog: { name: '바둑이', breed: '믹스견', size: '소형', age: 3, energy: '보통', friendly: true, traits: ['활발함'], health: { vaccinated: true, neutered: true, bite: false, allergies: '' } },
+    verified: { phone: true, registry: false },
+    manner: { count: 4, avg: 2.5, tags: {}, noShows: 2, lateCancels: 3 }, // 노쇼 2회 → 추천 제외
     likes: ['me'],
   },
 ];

@@ -8,6 +8,7 @@ import {
   healthFlags, isVerified, validRegistryNo,
   forecastFor, respondToProposal, reminderTimes, dueReminders,
   receivedLikes, dueLikeBacks, groupFit, recordFromWalk, recordStats,
+  mannerSummary, mannerFromReviews, isLateCancel, relativeDay,
 } from '../js/logic.js';
 import { PEOPLE, COURSES, DEFAULT_ME, GROUPS } from '../js/data.js';
 
@@ -229,6 +230,9 @@ test('dueReminders: 확정된 약속의 전날·1시간 전 알림을 한 번씩
   assert.deepEqual(dueReminders([w], [], start - 23 * 3600000).map((r) => r.kind), ['day']);
   assert.deepEqual(dueReminders([w], ['w1:day'], start - 30 * 60000).map((r) => r.kind), ['hour']);
   assert.equal(dueReminders([w], [], start + 60000).length, 0); // 약속 시간이 지나면 보내지 않음
+  assert.equal(dueReminders([w], [], start - 2 * 3600000).length, 0); // 2시간 남았으면 전날 알림은 건너뜀
+  assert.equal(relativeDay(new Date(start), new Date(start - 3600000)), '오늘');
+  assert.equal(relativeDay(new Date(start), new Date(start - 24 * 3600000)), '내일');
   assert.equal(dueReminders([{ ...w, status: 'pending' }], [], start - 30 * 60000).length, 0);
 });
 
@@ -282,4 +286,33 @@ test('recordStats: 횟수·거리·시간·친구 수', () => {
     { km: 3, minutes: 50, personId: null },
   ]);
   assert.deepEqual(st, { count: 3, km: 6.6, minutes: 110, friends: 1 });
+});
+
+test('mannerSummary: 평균·상위 태그·매너 우수·노쇼 제한', () => {
+  const good = mannerSummary({ count: 12, avg: 4.86, tags: { a: 3, b: 10, c: 5, d: 1 }, noShows: 0 });
+  assert.equal(good.avg, 4.9);
+  assert.deepEqual(good.topTags.map((t) => t.tag), ['b', 'c', 'a']);
+  assert.equal(good.badge, '매너 우수');
+  assert.equal(mannerSummary({ count: 3, avg: 5, tags: {} }).badge, null); // 평가 수 부족
+  const one = mannerSummary({ count: 9, avg: 4.8, tags: {}, noShows: 1 });
+  assert.deepEqual([one.badge, one.warning, one.restricted], [null, '노쇼 1회', false]);
+  assert.equal(mannerSummary({ noShows: 2 }).restricted, true);
+  assert.equal(mannerSummary({ lateCancels: 2 }).warning, '늦은 취소 2회');
+  assert.equal(mannerSummary().avg, null);
+});
+
+test('rankCandidates: 노쇼가 반복된 사람은 추천하지 않는다', () => {
+  const ids = rankCandidates({ ...me, lookingFor: '모두' }, PEOPLE, { maxKm: 10 }).map((c) => c.person.id);
+  assert.ok(!ids.includes('p9'));
+  assert.ok(ids.includes('p6')); // 노쇼 1회는 경고만
+});
+
+test('mannerFromReviews / isLateCancel', () => {
+  const m = mannerFromReviews([{ rating: 5, tags: ['a', 'b'] }, { rating: 4, tags: ['a'] }], { lateCancels: 1 });
+  assert.deepEqual([m.count, m.avg, m.tags.a, m.lateCancels], [2, 4.5, 2, 1]);
+  const now = Date.now();
+  const at = (h) => ({ status: 'confirmed', datetime: new Date(now + h * 3600000).toISOString() });
+  assert.equal(isLateCancel(at(2), now), true);
+  assert.equal(isLateCancel(at(5), now), false);
+  assert.equal(isLateCancel({ ...at(1), status: 'pending' }, now), false);
 });
