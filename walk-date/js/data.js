@@ -248,6 +248,9 @@ export const DEFAULT_ME = {
   phone: '',
 };
 
+// 동네 산책 모임 (5번 기능에서 채움)
+export const GROUPS = [];
+
 export const INTERESTS = ['카페', '사진', '전시', '러닝', '캠핑', '보드게임', '독서', '베이킹', '요가', '요리', '등산', '맛집', '음악', '여행'];
 
 // 상대방 자동 답장 (데모용)

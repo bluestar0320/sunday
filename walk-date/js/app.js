@@ -10,8 +10,9 @@ import { mountMap } from './map.js';
 import {
   $, view, state, route, save, resetState, esc, person, course, matchOf, photosOf, media, characterArt,
   toast, openModal, closeModal, DAYS, fmtDate, safeBadge, segHtml, chipsHtml, bindToggles, segVal, chipVals,
-  go, setTop, render, updateBadge, registerView, startTicker,
+  go, setTop, render, updateBadge, registerView, startTicker, isWalkDone,
 } from './core.js';
+import { startWalk, openGuardians, onWalkEnded, activeSession } from './safety.js';
 
 const MAX_PHOTOS = 5;
 
@@ -404,7 +405,7 @@ function renderMatches() {
 
 // ---------- 채팅 ----------
 function activeWalk(personId) {
-  return state.walks.find((w) => w.personId === personId && w.status !== 'cancelled' && walkStatus(w) !== 'done');
+  return state.walks.find((w) => w.personId === personId && !['cancelled', 'declined', 'replaced'].includes(w.status) && !isWalkDone(w));
 }
 
 function renderChat() {
@@ -684,6 +685,8 @@ function renderWalks() {
   const sorted = [...walks].sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
   const label = (w) => {
     if (w.status === 'pending') return ['pending', '수락 대기'];
+    if (w.session && !w.session.endedAt) return ['ongoing', '안심 산책 중'];
+    if (isWalkDone(w)) return ['done', '완료'];
     return { upcoming: ['upcoming', '예정'], ongoing: ['ongoing', '산책 중'], done: ['done', '완료'] }[walkStatus(w)];
   };
 
@@ -692,7 +695,8 @@ function renderWalks() {
     const c = course(w.courseId);
     const s = courseSafety(c, w.slot);
     const [cls, txt] = label(w);
-    const done = w.status === 'confirmed' && walkStatus(w) === 'done';
+    const done = isWalkDone(w);
+    const live = w.session && !w.session.endedAt;
     return `<div class="walk">
       <div class="head"><span class="when">${fmtDate(w.datetime)}</span><span class="status ${cls}">${txt}</span></div>
       <div class="info">
@@ -710,6 +714,7 @@ function renderWalks() {
           : `<button class="btn soft sm grow" data-cancel="${w.id}">취소</button>
              <button class="btn outline sm grow" data-finish="${w.id}" title="데모: 산책을 완료 처리">완료 처리</button>`}
       </div>
+      ${!done && w.status === 'confirmed' ? `<button class="btn ${live ? 'sos' : 'accent'} start-walk" data-start="${w.id}">${icon(live ? 'shield' : 'play', 18)}${live ? '안심 산책 화면 열기' : '안심 산책 시작'}</button>` : ''}
     </div>`;
   }).join('') + '<p class="muted small" style="text-align:center;margin-top:8px">산책이 끝나면 매너 평가를 남겨주세요. 평가는 익명으로 반영돼요.</p>';
 
@@ -733,11 +738,13 @@ function renderWalks() {
       const w = state.walks.find((x) => x.id === b.dataset.finish);
       w.status = 'confirmed';
       w.datetime = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+      w.completedAt = Date.now();
       save();
       renderWalks();
       openReview(w);
     };
   });
+  view.querySelectorAll('[data-start]').forEach((b) => { b.onclick = () => startWalk(b.dataset.start); });
   view.querySelectorAll('[data-review]').forEach((b) => { b.onclick = () => openReview(state.walks.find((x) => x.id === b.dataset.review)); });
 }
 
@@ -774,7 +781,7 @@ function renderProfile() {
   const me = state.me;
   const reviews = state.walks.filter((w) => w.review).map((w) => w.review);
   const avg = averageRating(reviews);
-  const walksDone = state.walks.filter((w) => w.status === 'confirmed' && walkStatus(w) === 'done').length;
+  const walksDone = state.walks.filter((w) => isWalkDone(w)).length;
 
   view.innerHTML = `
     <div class="me-head">
@@ -800,6 +807,7 @@ function renderProfile() {
       <div class="grow"><div class="t">안심 코스 우선 추천</div><div class="d">산책 제안 시 인적 드물거나 어두운 코스를 숨겨요</div></div>
       <span class="switch"><input type="checkbox" id="safeMode" ${me.safeMode !== false ? 'checked' : ''} /><span></span></span>
     </label>
+    <button class="menu-item" id="guardians" style="margin-top:8px">${icon('users', 20)}<span class="grow" style="text-align:left">안심 연락처 · 자동 알림 설정</span><span class="muted small">${state.guardians.length}명</span></button>
 
     <div class="label">프로필</div>
     <button class="menu-item" id="editMe">${icon('user', 20)}<span class="grow" style="text-align:left">보호자 정보 수정</span></button>
@@ -808,6 +816,7 @@ function renderProfile() {
 
   bindPhotoGrid(view, () => { $('.me-head .thumb').innerHTML = media(me); });
   $('#safeMode').onchange = (e) => { me.safeMode = e.target.checked; save(); toast(e.target.checked ? '안심 코스만 추천할게요' : '모든 코스를 추천할게요'); };
+  $('#guardians').onclick = () => openGuardians(() => render());
   $('#editMe').onclick = () => openModal(`<h3>보호자 정보</h3><div style="height:16px"></div>${personFields(me)}<div class="sheet-foot"><button class="btn" id="save">저장</button></div>`, (root) => {
     bindToggles(root);
     $('#save', root).onclick = () => { if (readPersonFields()) { closeModal(); render(); toast('저장했어요'); } };
@@ -822,6 +831,13 @@ function renderProfile() {
     go('onboarding', { step: 0 });
   };
 }
+
+onWalkEnded((w) => {
+  setTimeout(() => {
+    go('walks');
+    if (w.personId && !w.review) openReview(w);
+  }, 600);
+});
 
 registerView('onboarding', renderOnboarding);
 registerView('discover', renderDiscover);

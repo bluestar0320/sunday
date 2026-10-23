@@ -10,7 +10,7 @@ const MAX_MPP = 12;
 
 const ptsAttr = (pts) => pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
 
-export function mountMap(el, { course, slot, mid = null, interactive = true }) {
+export function mountMap(el, { course, slot, mid = null, me = null, interactive = true }) {
   const origin = { lat: course.lat, lng: course.lng };
   const m = (lat, lng) => toMeters(origin, { lat, lng });
   const route = course.path.map((p) => m(p.lat, p.lng));
@@ -70,6 +70,13 @@ export function mountMap(el, { course, slot, mid = null, interactive = true }) {
   });
   if (midPt) add(midPt.x, midPt.y, `<span>${icon('users', 13)}</span><em>중간 지점</em>`, 'mk-mid');
   add(start.x, start.y, `<span>${icon('pin', 14)}</span><em>${course.roundTrip ? '출발 · 반환' : '출발 · 도착'}</em>`, 'mk-start');
+  // 안심 산책 중 현재 위치 (setMe로 이동)
+  let meMarker = null;
+  if (me) {
+    const p = m(me.lat, me.lng);
+    add(p.x, p.y, '<span></span>', 'mk-me');
+    meMarker = markers[markers.length - 1];
+  }
 
   // 보기 영역: 경로(+중간 지점, 표시된 시설)가 다 들어오도록
   const fitPts = [...route, ...pois, ...(midPt ? [midPt] : [])];
@@ -142,5 +149,14 @@ export function mountMap(el, { course, slot, mid = null, interactive = true }) {
     el.addEventListener('pointercancel', end);
   }
 
-  return { destroy: () => ro.disconnect() };
+  return {
+    destroy: () => ro.disconnect(),
+    setMe(pt) {
+      if (!meMarker) return;
+      const p = m(pt.lat, pt.lng);
+      meMarker.x = p.x;
+      meMarker.y = p.y;
+      update();
+    },
+  };
 }

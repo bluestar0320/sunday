@@ -4,6 +4,7 @@ import {
   distanceKm, compatibility, rankCandidates, recommendCourses, courseSafety,
   isMutualMatch, averageRating, walkStatus,
   toMeters, offsetLatLng, pathLengthKm, courseStats, hazardSegments,
+  positionAlongPath, sessionStatus, normalizePhone,
 } from '../js/logic.js';
 import { PEOPLE, COURSES, DEFAULT_ME } from '../js/data.js';
 
@@ -123,4 +124,41 @@ test('코스 데이터: 경로·주의 구간·시설 정보가 안전 정보와
     // 어둡고 가려진 코스에는 항상 주의 구간이 표시돼야 한다
     if (!c.safety.openView) assert.ok(c.hazards.some((h) => h.when === 'always'), c.id);
   }
+});
+
+test('positionAlongPath: 0이면 출발점, 1이면 도착점, 0.5면 거리상 중간', () => {
+  const a = { lat: 37.556, lng: 126.906 };
+  const b = offsetLatLng(a, 1000, 90);
+  const path = [a, b];
+  assert.deepEqual(positionAlongPath(path, 0), { lat: a.lat, lng: a.lng });
+  assert.ok(distanceKm(positionAlongPath(path, 1), b) < 0.001);
+  assert.ok(Math.abs(distanceKm(a, positionAlongPath(path, 0.5)) - 0.5) < 0.01);
+  assert.deepEqual(positionAlongPath(path, 2), positionAlongPath(path, 1));
+});
+
+test('sessionStatus: 체크인 시점, 예정 시간 초과, 자동 알림', () => {
+  const start = 1_000_000_000_000;
+  const min = 60000;
+  const s = { startedAt: start, plannedMin: 60, expectedEnd: start + 60 * min, checkins: [], alertedAt: null };
+  const opts = { graceMin: 15, checkinMin: 20 };
+  assert.equal(sessionStatus(s, start + 10 * min, opts).needCheckin, false);
+  assert.equal(sessionStatus(s, start + 21 * min, opts).needCheckin, true);
+  assert.equal(sessionStatus({ ...s, checkins: [start + 20 * min] }, start + 25 * min, opts).needCheckin, false);
+  const late = sessionStatus(s, start + 70 * min, opts);
+  assert.equal(late.overdue, true);
+  assert.equal(late.shouldAlert, false);
+  assert.equal(Math.round(late.alertInMin), 5);
+  assert.equal(sessionStatus(s, start + 76 * min, opts).shouldAlert, true);
+  assert.equal(sessionStatus({ ...s, alertedAt: start + 76 * min }, start + 80 * min, opts).shouldAlert, false);
+  assert.equal(sessionStatus({ ...s, endedAt: start + 50 * min }, start + 90 * min, opts).overdue, false);
+  // 데모용 시간 앞당기기
+  assert.equal(sessionStatus({ ...s, offsetMs: 30 * min }, start, opts).progress, 0.5);
+});
+
+test('normalizePhone: 휴대폰 번호만 허용하고 하이픈 형식으로', () => {
+  assert.equal(normalizePhone('01012345678'), '010-1234-5678');
+  assert.equal(normalizePhone('010-1234-5678'), '010-1234-5678');
+  assert.equal(normalizePhone('011-123-4567'), '011-123-4567');
+  assert.equal(normalizePhone('02-123-4567'), null);
+  assert.equal(normalizePhone('abc'), null);
 });

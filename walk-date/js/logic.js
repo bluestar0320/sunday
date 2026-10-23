@@ -191,3 +191,54 @@ export function hazardSegments(course, slot) {
     return { ...h, no: i + 1, runs, active: h.when === 'always' || night };
   });
 }
+
+// ---------- 산책 당일 안심 기능 ----------
+// 경로의 fraction(0~1) 지점 좌표 — 거리 기준으로 보간
+export function positionAlongPath(path, fraction) {
+  const f = Math.min(1, Math.max(0, fraction));
+  const total = pathLengthKm(path);
+  if (!total) return { lat: path[0].lat, lng: path[0].lng };
+  let target = total * f;
+  for (let i = 1; i < path.length; i++) {
+    const seg = distanceKm(path[i - 1], path[i]);
+    if (target <= seg || i === path.length - 1) {
+      const t = seg ? Math.min(1, target / seg) : 0;
+      return {
+        lat: path[i - 1].lat + (path[i].lat - path[i - 1].lat) * t,
+        lng: path[i - 1].lng + (path[i].lng - path[i - 1].lng) * t,
+      };
+    }
+    target -= seg;
+  }
+  return { lat: path[path.length - 1].lat, lng: path[path.length - 1].lng };
+}
+
+// 안심 산책 세션 상태. session.offsetMs는 데모에서 시간을 앞당길 때 쓴다
+export function sessionStatus(session, now, { graceMin = 15, checkinMin = 20 } = {}) {
+  const t = now + (session.offsetMs || 0);
+  const elapsedMin = Math.max(0, (t - session.startedAt) / 60000);
+  const overdueMin = Math.max(0, (t - session.expectedEnd) / 60000);
+  const lastCheck = Math.max(session.startedAt, ...(session.checkins || []));
+  const sinceCheckMin = (t - lastCheck) / 60000;
+  const ended = Boolean(session.endedAt);
+  return {
+    now: t,
+    elapsedMin,
+    remainingMin: Math.max(0, (session.expectedEnd - t) / 60000),
+    overdueMin,
+    overdue: !ended && overdueMin > 0,
+    // 예정 시간 + 유예 시간이 지나도 종료하지 않으면 지인에게 자동 알림
+    shouldAlert: !ended && overdueMin >= graceMin && !session.alertedAt,
+    alertInMin: Math.max(0, graceMin - overdueMin),
+    needCheckin: !ended && sinceCheckMin >= checkinMin,
+    progress: Math.min(1, elapsedMin / Math.max(1, session.plannedMin)),
+    ended,
+  };
+}
+
+// 휴대폰 번호 형식 (010-1234-5678, 01012345678 등)
+export function normalizePhone(input) {
+  const d = String(input || '').replace(/\D/g, '');
+  if (!/^01[016789]\d{7,8}$/.test(d)) return null;
+  return d.length === 10 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}` : `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`;
+}

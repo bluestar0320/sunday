@@ -1,5 +1,5 @@
 // 앱 전체가 함께 쓰는 상태·저장·화면 전환·공통 UI
-import { PEOPLE, COURSES, DEFAULT_ME } from './data.js';
+import { PEOPLE, COURSES, DEFAULT_ME, GROUPS } from './data.js';
 import { SIZES } from './logic.js';
 import { icon, dogArt } from './ui.js';
 
@@ -76,6 +76,21 @@ export const person = (id) => (id === 'me' ? state.me : PEOPLE.find((p) => p.id 
 export const course = (id) => COURSES.find((c) => c.id === id);
 export const matchOf = (id) => state.matches.find((m) => m.personId === id);
 export const photosOf = (p) => p.dog.photos || [];
+export const groupById = (id) => state.groups.find((g) => g.id === id) || GROUPS.find((g) => g.id === id);
+
+// 산책 일정의 상대 (1:1이면 사람, 모임이면 모임 이름)
+export function walkWho(w) {
+  if (w.groupId) {
+    const g = groupById(w.groupId);
+    return { title: g ? g.title : '동네 산책 모임', group: g };
+  }
+  const p = person(w.personId);
+  return { title: `${p.name} · ${p.dog.name}`, person: p };
+}
+
+// 산책이 끝났는지 (안심 산책을 종료했거나, 확정된 약속의 시간이 지났을 때)
+export const isWalkDone = (w, now = Date.now()) => Boolean(w.completedAt)
+  || (w.status === 'confirmed' && now > new Date(w.datetime).getTime() + 90 * 60000);
 
 // 사진이 있으면 사진, 없으면 캐릭터 이미지(못 불러오면 일러스트)
 export function media(p, i = 0) {
