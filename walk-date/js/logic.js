@@ -351,3 +351,33 @@ export function groupFit(group, me, members, now = Date.now()) {
   if (group.sizeRule !== '모두' && group.sizeRule !== me.dog.size) return { ok: false, reason: `${group.sizeRule}견만 참여할 수 있어요` };
   return { ok: true, reason: `${group.capacity - members.length}자리 남았어요` };
 }
+
+// ---------- 산책 기록 ----------
+// 안심 산책 세션이 있으면 실제 걸은 시간으로, 없으면 코스 예상치로 기록
+export function recordFromWalk(walk, course, now = Date.now()) {
+  const s = walk.session;
+  const minutes = s?.endedAt ? Math.max(1, Math.round((s.endedAt - s.startedAt) / 60000)) : course.minutes;
+  const ratio = s?.endedAt ? Math.min(1, minutes / Math.max(1, course.minutes)) : 1;
+  return {
+    walkId: walk.id,
+    personId: walk.personId || null,
+    groupId: walk.groupId || null,
+    courseId: course.id,
+    slot: walk.slot,
+    date: walk.completedAt || now,
+    km: Math.round(course.lengthKm * ratio * 10) / 10,
+    minutes,
+    photos: [],
+    memo: '',
+  };
+}
+
+export function recordStats(records) {
+  const km = records.reduce((a, r) => a + r.km, 0);
+  return {
+    count: records.length,
+    km: Math.round(km * 10) / 10,
+    minutes: records.reduce((a, r) => a + r.minutes, 0),
+    friends: new Set(records.map((r) => r.personId).filter(Boolean)).size,
+  };
+}

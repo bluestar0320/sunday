@@ -4,7 +4,7 @@ import {
   rankCandidates, compatibility, recommendCourses, courseSafety, isMutualMatch,
   averageRating, walkStatus, ageFromBirthYear, midpoint, hazardSegments,
   healthFlags, isVerified, validRegistryNo, normalizePhone,
-  forecastFor, respondToProposal, reminderTimes, dueReminders, dueLikeBacks,
+  forecastFor, respondToProposal, reminderTimes, dueReminders, dueLikeBacks, recordStats,
 } from './logic.js';
 import { icon, dogArt, resizeImage, SAFETY_ICON, walkScene } from './ui.js';
 import { mountMap } from './map.js';
@@ -16,6 +16,7 @@ import {
 } from './core.js';
 import { startWalk, openGuardians, onWalkEnded, activeSession } from './safety.js';
 import { renderGroups, openGroup, membersOf } from './groups.js';
+import { renderRecords, createRecord, recordsWith, offerSecondWalk } from './records.js';
 
 const MAX_PHOTOS = 5;
 
@@ -519,10 +520,14 @@ function renderChat() {
 
   const w = activeWalk(p.id);
   const waitingMe = w && w.status === 'pending' && (w.from || 'me') !== 'me';
+  const lastRec = recordsWith(p.id)[0];
   const plan = w
     ? `<div class="grow"><b>${fmtDate(w.datetime)}</b><span>${esc(course(w.courseId).name)} · ${waitingMe ? '내 답을 기다려요' : w.status === 'pending' ? '답을 기다리는 중' : '약속 확정'}</span></div>
        <button class="btn sm outline" id="planBtn">일정 보기</button>`
-    : `<div class="grow"><b>첫 산책을 제안해 보세요</b><span>안심 코스로 추천해 드려요</span></div>
+    : lastRec
+      ? `<div class="grow"><b>지난번에 함께 걸었어요</b><span>${esc(course(lastRec.courseId).name)} · ${lastRec.km}km</span></div>
+       <button class="btn sm accent" id="planBtn">${icon('heart', 16, 'filled')}또 걸어요</button>`
+      : `<div class="grow"><b>첫 산책을 제안해 보세요</b><span>안심 코스로 추천해 드려요</span></div>
        <button class="btn sm accent" id="planBtn">${icon('route', 16)}코스 추천</button>`;
 
   view.innerHTML = `
@@ -544,7 +549,7 @@ function renderChat() {
     $('#msgInput').value = '';
     fakeReply(p);
   };
-  $('#planBtn').onclick = () => (w ? go('walks') : openProposal(p));
+  $('#planBtn').onclick = () => (w ? go('walks') : openProposal(p, { courseId: lastRec?.courseId }));
   $('#msgs').onclick = (e) => {
     if (handleWalkAction(e)) return;
     const card = e.target.closest('[data-map]');
@@ -635,7 +640,7 @@ function courseHtml(c, selected, tag = '') {
 }
 
 // replace: 바꾸려는 기존 약속(다른 시간 제안), courseId: 미리 고른 코스(또 걸어요)
-function openProposal(p, { replace = null, courseId = null } = {}) {
+export function openProposal(p, { replace = null, courseId = null } = {}) {
   const common = state.me.walkTimes.filter((t) => p.walkTimes.includes(t));
   const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i + 1); return d; });
   const dayLabel = (d, i) => (i === 0 ? '내일' : `${d.getMonth() + 1}/${d.getDate()} ${DAYS[d.getDay()]}`);
@@ -866,7 +871,7 @@ function openSafetyMenu(p) {
 // ---------- 산책 일정 ----------
 const HIDDEN_WALK = ['cancelled', 'declined', 'replaced'];
 
-const WALK_TABS = { mine: '내 일정', groups: '동네 모임' };
+const WALK_TABS = { mine: '내 일정', groups: '동네 모임', records: '산책 기록' };
 
 export function renderWalks() {
   if (route.name !== 'walks') return;
@@ -876,10 +881,10 @@ export function renderWalks() {
   const bindTabs = () => bindToggles(view.querySelector('.walk-tabs'), (name, v) => {
     go('walks', { tab: Object.keys(WALK_TABS).find((k) => WALK_TABS[k] === v) });
   });
-  if (tab === 'groups') {
+  if (tab === 'groups' || tab === 'records') {
     view.innerHTML = tabsHtml;
     bindTabs();
-    renderGroups(view);
+    (tab === 'groups' ? renderGroups : renderRecords)(view);
     return;
   }
   const walks = state.walks.filter((w) => !state.blocked.includes(w.personId) && !HIDDEN_WALK.includes(w.status));
@@ -964,6 +969,7 @@ export function renderWalks() {
       const w = state.walks.find((x) => x.id === b.dataset.finish);
       w.datetime = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
       w.completedAt = Date.now();
+      createRecord(w);
       save();
       renderWalks();
       if (w.personId) openReview(w);
@@ -1021,7 +1027,7 @@ function openReview(w) {
       save();
       closeModal();
       renderWalks();
-      toast('평가를 남겼어요. 감사합니다!');
+      if (!offerSecondWalk(w, w.review)) toast('평가를 남겼어요. 감사합니다!');
     };
   });
 }
@@ -1096,7 +1102,7 @@ function renderProfile() {
     <div class="stats">
       <div><b>${state.matches.length}</b><span>매칭</span></div>
       <div><b>${walksDone}</b><span>함께한 산책</span></div>
-      <div><b>${avg ?? '-'}</b><span>내가 준 평균 별점</span></div>
+      <div><b>${recordStats(state.records).km}</b><span>함께 걸은 km</span></div>
     </div>
 
     <div class="label">사진 <span class="muted small" style="font-weight:400">첫 번째 사진이 대표 사진이에요</span></div>
@@ -1184,6 +1190,7 @@ onTick((now) => {
 });
 
 onWalkEnded((w) => {
+  createRecord(w);
   setTimeout(() => {
     go('walks');
     if (w.personId && !w.review) openReview(w);

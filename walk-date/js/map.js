@@ -160,3 +160,18 @@ export function mountMap(el, { course, slot, mid = null, me = null, interactive 
     },
   };
 }
+
+// 기록 카드용 작은 경로 그림
+export function routeThumb(course, w = 84, h = 64) {
+  const origin = { lat: course.lat, lng: course.lng };
+  const pts = course.path.map((p) => toMeters(origin, p));
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
+  const pad = 8;
+  const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1);
+  const scale = Math.min((w - pad * 2) / span, (h - pad * 2) / span);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const d = pts.map((p) => `${(w / 2 + (p.x - cx) * scale).toFixed(1)},${(h / 2 + (p.y - cy) * scale).toFixed(1)}`).join(' ');
+  return `<svg class="route-thumb" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"><polyline points="${d}" fill="none" stroke="var(--route)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${d.split(' ')[0].split(',')[0]}" cy="${d.split(' ')[0].split(',')[1]}" r="3.5" fill="var(--accent)"/></svg>`;
+}

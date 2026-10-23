@@ -7,7 +7,7 @@ import {
   positionAlongPath, sessionStatus, normalizePhone,
   healthFlags, isVerified, validRegistryNo,
   forecastFor, respondToProposal, reminderTimes, dueReminders,
-  receivedLikes, dueLikeBacks, groupFit,
+  receivedLikes, dueLikeBacks, groupFit, recordFromWalk, recordStats,
 } from '../js/logic.js';
 import { PEOPLE, COURSES, DEFAULT_ME, GROUPS } from '../js/data.js';
 
@@ -263,4 +263,23 @@ test('샘플 모임: 모두 안심·보통 코스에서 열린다', () => {
     assert.notEqual(courseSafety(c, g.slot).level, '주의', g.id);
     assert.ok(g.members.length < g.capacity, g.id);
   }
+});
+
+test('recordFromWalk: 안심 산책 시간으로 거리 계산, 없으면 코스 예상치', () => {
+  const c = COURSES.find((x) => x.id === 'c6'); // 1.2km, 20분
+  const plain = recordFromWalk({ id: 'w1', personId: 'p1', slot: '저녁', completedAt: 5 }, c);
+  assert.deepEqual([plain.km, plain.minutes, plain.date, plain.personId], [c.lengthKm, c.minutes, 5, 'p1']);
+  const half = recordFromWalk({ id: 'w2', groupId: 'g1', slot: '점심', session: { startedAt: 0, endedAt: 10 * 60000 } }, c);
+  assert.equal(half.minutes, 10);
+  assert.equal(half.km, Math.round(c.lengthKm * 0.5 * 10) / 10);
+  assert.equal(half.groupId, 'g1');
+});
+
+test('recordStats: 횟수·거리·시간·친구 수', () => {
+  const st = recordStats([
+    { km: 1.2, minutes: 20, personId: 'p1' },
+    { km: 2.35, minutes: 40, personId: 'p1' },
+    { km: 3, minutes: 50, personId: null },
+  ]);
+  assert.deepEqual(st, { count: 3, km: 6.6, minutes: 110, friends: 1 });
 });
