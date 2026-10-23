@@ -7,9 +7,9 @@ import {
   positionAlongPath, sessionStatus, normalizePhone,
   healthFlags, isVerified, validRegistryNo,
   forecastFor, respondToProposal, reminderTimes, dueReminders,
-  receivedLikes, dueLikeBacks,
+  receivedLikes, dueLikeBacks, groupFit,
 } from '../js/logic.js';
-import { PEOPLE, COURSES, DEFAULT_ME } from '../js/data.js';
+import { PEOPLE, COURSES, DEFAULT_ME, GROUPS } from '../js/data.js';
 
 const me = {
   ...structuredClone(DEFAULT_ME),
@@ -244,4 +244,23 @@ test('dueLikeBacks: likesBack인 사람만, 시간이 지난 뒤 한 번', () =>
   const sent = [{ id: 'p2', at: 0 }, { id: 'p7', at: 0 }, { id: 'p5', at: 0, answered: true }];
   assert.deepEqual(dueLikeBacks(sent, PEOPLE, 5000).map((p) => p.id), []);
   assert.deepEqual(dueLikeBacks(sent, PEOPLE, 9000).map((p) => p.id), ['p2']);
+});
+
+test('groupFit: 정원·크기 제한·지난 모임·이미 참여', () => {
+  const g = { capacity: 3, sizeRule: '소형', datetime: new Date(Date.now() + 86400000).toISOString() };
+  const small = { ...me, dog: { ...me.dog, size: '소형' } };
+  assert.equal(groupFit(g, small, ['a', 'b']).ok, true);
+  assert.equal(groupFit(g, small, ['a', 'b', 'c']).reason, '자리가 다 찼어요');
+  assert.equal(groupFit(g, me, ['a']).ok, false); // 중형견
+  assert.equal(groupFit({ ...g, sizeRule: '모두' }, me, ['a']).ok, true);
+  assert.equal(groupFit(g, small, ['a', 'me']).joined, true);
+  assert.equal(groupFit({ ...g, datetime: new Date(Date.now() - 1000).toISOString() }, small, []).ok, false);
+});
+
+test('샘플 모임: 모두 안심·보통 코스에서 열린다', () => {
+  for (const g of GROUPS) {
+    const c = COURSES.find((x) => x.id === g.courseId);
+    assert.notEqual(courseSafety(c, g.slot).level, '주의', g.id);
+    assert.ok(g.members.length < g.capacity, g.id);
+  }
 });

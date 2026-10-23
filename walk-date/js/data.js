@@ -259,8 +259,32 @@ export const DEFAULT_ME = {
   verified: { phone: false, registry: false },
 };
 
-// 동네 산책 모임 (5번 기능에서 채움)
-export const GROUPS = [];
+// 동네 산책 모임 (데모: 오늘 기준 며칠 뒤로 날짜를 잡는다)
+const SLOT_HOURS = { '이른 아침': 7, '점심': 12, '저녁': 18, '밤': 21 };
+const inDays = (n, slot) => { const d = new Date(); d.setDate(d.getDate() + n); d.setHours(SLOT_HOURS[slot], 0, 0, 0); return d.toISOString(); };
+
+export const GROUPS = [
+  {
+    id: 'g1', title: '망원한강 소형견 아침 산책', hostId: 'p3', courseId: 'c1', slot: '이른 아침', datetime: inDays(1, '이른 아침'),
+    capacity: 6, sizeRule: '소형', members: ['p3', 'p8', 'p5'],
+    note: '출근 전 40분 가볍게 걸어요. 처음 오셔도 괜찮아요! 배변봉투 꼭 챙겨주세요.',
+  },
+  {
+    id: 'g2', title: '연남 숲길 퇴근길 산책', hostId: 'p5', courseId: 'c2', slot: '저녁', datetime: inDays(2, '저녁'),
+    capacity: 5, sizeRule: '모두', members: ['p5', 'p1', 'p2', 'p8'],
+    note: '경의선숲길 따라 걷고, 원하시는 분들은 동반 카페에서 쉬었다 가요.',
+  },
+  {
+    id: 'g3', title: '평화의공원 대형견 점심 산책', hostId: 'p4', courseId: 'c3', slot: '점심', datetime: inDays(3, '점심'),
+    capacity: 4, sizeRule: '대형', members: ['p4', 'p7'],
+    note: '대형견끼리 여유 있게 호수 한 바퀴. 리드줄 필수예요.',
+  },
+  {
+    id: 'g4', title: '서교동 카페거리 주말 산책', hostId: 'p8', courseId: 'c6', slot: '점심', datetime: inDays(4, '점심'),
+    capacity: 6, sizeRule: '모두', members: ['p8', 'p6'],
+    note: '산책하면서 강아지 사진 찍어드려요 📷 천천히 친해지는 아이도 환영!',
+  },
+];
 
 export const INTERESTS = ['카페', '사진', '전시', '러닝', '캠핑', '보드게임', '독서', '베이킹', '요가', '요리', '등산', '맛집', '음악', '여행'];
 

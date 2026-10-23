@@ -341,3 +341,13 @@ export function dueLikeBacks(likesSent, people, now, delayMs = 8000) {
     .map((l) => people.find((p) => p.id === l.id))
     .filter((p) => p?.likesBack);
 }
+
+// ---------- 동네 산책 모임 ----------
+// members: 참여자 id 목록 (나는 'me')
+export function groupFit(group, me, members, now = Date.now()) {
+  if (members.includes(me.id)) return { ok: false, joined: true, reason: '참여 중' };
+  if (new Date(group.datetime).getTime() < now) return { ok: false, reason: '이미 지난 모임이에요' };
+  if (members.length >= group.capacity) return { ok: false, reason: '자리가 다 찼어요' };
+  if (group.sizeRule !== '모두' && group.sizeRule !== me.dog.size) return { ok: false, reason: `${group.sizeRule}견만 참여할 수 있어요` };
+  return { ok: true, reason: `${group.capacity - members.length}자리 남았어요` };
+}

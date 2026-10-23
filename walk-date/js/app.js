@@ -12,9 +12,10 @@ import { mountMap } from './map.js';
 import {
   $, view, state, route, save, resetState, esc, person, course, matchOf, photosOf, media, characterArt,
   toast, openModal, closeModal, DAYS, fmtDate, safeBadge, segHtml, chipsHtml, bindToggles, segVal, chipVals,
-  go, setTop, render, updateBadge, registerView, startTicker, isWalkDone, switchHtml, notify, uid, onTick, walkWho, likesForMe,
+  go, setTop, render, updateBadge, registerView, startTicker, isWalkDone, switchHtml, notify, uid, onTick, walkWho, likesForMe, groupById,
 } from './core.js';
 import { startWalk, openGuardians, onWalkEnded, activeSession } from './safety.js';
+import { renderGroups, openGroup, membersOf } from './groups.js';
 
 const MAX_PHOTOS = 5;
 
@@ -781,7 +782,7 @@ function refreshWalkViews(personId) {
 }
 
 // 코스 지도 전체 화면 (모달 위에 겹쳐 열림)
-function openCourseMap(courseId, slot, personId) {
+export function openCourseMap(courseId, slot, personId) {
   const c = course(courseId);
   const other = personId && person(personId);
   const mid = other ? midpoint(state.me, other) : null;
@@ -865,12 +866,27 @@ function openSafetyMenu(p) {
 // ---------- 산책 일정 ----------
 const HIDDEN_WALK = ['cancelled', 'declined', 'replaced'];
 
-function renderWalks() {
-  setTop('산책 일정');
+const WALK_TABS = { mine: '내 일정', groups: '동네 모임' };
+
+export function renderWalks() {
+  if (route.name !== 'walks') return;
+  setTop('산책');
+  const tab = WALK_TABS[route.tab] ? route.tab : 'mine';
+  const tabsHtml = `<div class="walk-tabs">${segHtml('walkTab', Object.values(WALK_TABS), WALK_TABS[tab])}</div>`;
+  const bindTabs = () => bindToggles(view.querySelector('.walk-tabs'), (name, v) => {
+    go('walks', { tab: Object.keys(WALK_TABS).find((k) => WALK_TABS[k] === v) });
+  });
+  if (tab === 'groups') {
+    view.innerHTML = tabsHtml;
+    bindTabs();
+    renderGroups(view);
+    return;
+  }
   const walks = state.walks.filter((w) => !state.blocked.includes(w.personId) && !HIDDEN_WALK.includes(w.status));
   if (!walks.length) {
-    view.innerHTML = `<div class="empty"><div class="ic-wrap">${icon('calendar', 28)}</div>
-      <strong>예정된 산책이 없어요</strong>대화방에서 <b>코스 추천</b>을 눌러<br/>첫 산책을 제안해 보세요.</div>`;
+    view.innerHTML = `${tabsHtml}<div class="empty"><div class="ic-wrap">${icon('calendar', 28)}</div>
+      <strong>예정된 산책이 없어요</strong>대화방에서 <b>코스 추천</b>을 눌러 첫 산책을 제안하거나,<br/><b>동네 모임</b>에 참여해 보세요.</div>`;
+    bindTabs();
     return;
   }
   const sorted = [...walks].sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
@@ -881,7 +897,8 @@ function renderWalks() {
     return { upcoming: ['upcoming', '예정'], ongoing: ['ongoing', '산책 시간'], done: ['done', '완료'] }[walkStatus(w)];
   };
 
-  view.innerHTML = sorted.map((w) => {
+  view.innerHTML = tabsHtml + sorted.map((w) => {
+    if (w.groupId) return groupWalkHtml(w, label(w));
     const p = person(w.personId);
     const c = course(w.courseId);
     const s = courseSafety(c, w.slot);
@@ -924,7 +941,9 @@ function renderWalks() {
     </div>`;
   }).join('') + '<p class="muted small" style="text-align:center;margin-top:8px">산책이 끝나면 매너 평가를 남겨주세요. 평가는 익명으로 반영돼요.</p>';
 
+  bindTabs();
   view.onclick = (e) => { if (route.name === 'walks') handleWalkAction(e); };
+  view.querySelectorAll('[data-g-open]').forEach((b) => { b.onclick = () => openGroup(b.dataset.gOpen); });
   view.querySelectorAll('[data-chat]').forEach((b) => { b.onclick = () => go('chat', { id: b.dataset.chat, back: 'walks' }); });
   view.querySelectorAll('[data-course]').forEach((b) => {
     b.onclick = () => { const w = state.walks.find((x) => x.id === b.dataset.course); openCourseMap(w.courseId, w.slot, w.personId); };
@@ -947,11 +966,37 @@ function renderWalks() {
       w.completedAt = Date.now();
       save();
       renderWalks();
-      openReview(w);
+      if (w.personId) openReview(w);
+      else toast('모임 산책을 마쳤어요');
     };
   });
   view.querySelectorAll('[data-start]').forEach((b) => { b.onclick = () => startWalk(b.dataset.start); });
   view.querySelectorAll('[data-review]').forEach((b) => { b.onclick = () => openReview(state.walks.find((x) => x.id === b.dataset.review)); });
+}
+
+// 내 일정 속 모임 산책 카드
+function groupWalkHtml(w, [cls, txt]) {
+  const g = groupById(w.groupId);
+  const c = course(w.courseId);
+  const s = courseSafety(c, w.slot);
+  const done = isWalkDone(w);
+  const live = w.session && !w.session.endedAt;
+  const members = g ? membersOf(g) : [];
+  return `<div class="walk group-walk">
+    <div class="head"><span class="when">${fmtDate(w.datetime)}</span><span class="status ${cls}">${txt}</span></div>
+    <div class="info">
+      <div>${icon('users', 16)}<b>${esc(g?.title || '동네 산책 모임')}</b> · ${members.length}명</div>
+      <div>${icon('pin', 16)}${esc(c.name)} · ${c.lengthKm}km</div>
+      <div>${icon('shield', 16)}${w.slot} 기준 안전도 ${safeBadge(s.level)}</div>
+      <div>${icon('sunny', 16)}예보 ${weatherHtml(w.datetime, { full: true })}</div>
+    </div>
+    <div class="row">
+      ${g ? `<button class="btn soft sm grow" data-g-open="${g.id}">모임 정보</button>` : ''}
+      <button class="btn soft sm grow" data-course="${w.id}">${icon('route', 16)}지도</button>
+      ${!done ? `<button class="btn outline sm grow" data-finish="${w.id}" title="데모: 산책을 완료 처리">완료 처리</button>` : ''}
+    </div>
+    ${!done ? `<button class="btn ${live ? 'sos' : 'accent'} start-walk" data-start="${w.id}">${icon(live ? 'shield' : 'play', 18)}${live ? '안심 산책 화면 열기' : '안심 산책 시작'}</button>` : ''}
+  </div>`;
 }
 
 const REVIEW_TAGS = ['시간 약속을 잘 지켜요', '대화가 즐거워요', '강아지를 잘 케어해요', '매너가 좋아요', '또 산책하고 싶어요'];
@@ -1132,7 +1177,7 @@ onTick((now) => {
     const f = forecastFor(w.datetime);
     const rain = f.rainy ? ` · 비 예보 ${f.rainProb}%` : '';
     notify(r.kind === 'day'
-      ? `내일 ${fmtDate(w.datetime).replace(/^.*\) /, '')} ${who}님과 산책 약속이 있어요${rain}`
+      ? `내일 ${fmtDate(w.datetime).replace(/^.*\) /, '')} ${w.groupId ? `'${who}' 모임 산책이 있어요` : `${who}님과 산책 약속이 있어요`}${rain}`
       : `1시간 뒤 ${course(w.courseId).name}에서 산책이에요. 출발할 때 안심 산책을 켜 주세요`, { kind: 'reminder', to: { name: 'walks' } });
   });
   if (due.length) save();

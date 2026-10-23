@@ -699,3 +699,23 @@ button.tag.rainy .ic { color: #4F7EA3; }
 .liked-me { position: absolute; top: 66px; right: 16px; z-index: 3; display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 11px; border-radius: 999px; background: var(--heart); color: #fff; font-size: 12px; font-weight: 700; }
 .sheet-profile { margin: 0 -4px; }
 .sheet-profile .pcard-photo { aspect-ratio: 1 / 1; }
+
+/* 동네 산책 모임 */
+.walk-tabs { margin: 0 0 16px; }
+.group { padding: 18px; border-radius: 26px; background: var(--surface); box-shadow: var(--shadow-sm); cursor: pointer; transition: transform .15s; }
+.group:active { transform: scale(.98); }
+.group.joined { box-shadow: inset 0 0 0 2px var(--accent-2), var(--shadow-sm); }
+.g-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.g-title { font-family: var(--title-font); font-size: 18px; flex: 1; }
+.g-meta { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); margin-top: 4px; }
+.g-foot { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.g-count { font-size: 12px; color: var(--muted); }
+.g-state { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--muted); }
+.g-state.ok { color: var(--accent); }
+.avatars { display: inline-flex; }
+.avatars .av { width: 30px; height: 30px; border-radius: 50%; overflow: hidden; border: 2px solid var(--surface); margin-left: -8px; background: var(--bg-soft); display: grid; place-items: center; font-size: 11px; font-weight: 700; color: var(--text-2); }
+.avatars .av:first-child { margin-left: 0; }
+.walk-info { display: grid; gap: 8px; color: var(--text-2); font-size: 14px; }
+.walk-info > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.menu-item.on { box-shadow: inset 0 0 0 2px var(--accent-2), var(--shadow-sm); }
+.menu-item .avatar { width: 36px; height: 36px; }
