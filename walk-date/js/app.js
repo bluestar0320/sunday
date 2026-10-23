@@ -4,7 +4,7 @@ import {
   rankCandidates, compatibility, recommendCourses, courseSafety, isMutualMatch,
   averageRating, walkStatus, ageFromBirthYear, midpoint, hazardSegments,
   healthFlags, isVerified, validRegistryNo, normalizePhone,
-  forecastFor, respondToProposal, reminderTimes, dueReminders,
+  forecastFor, respondToProposal, reminderTimes, dueReminders, dueLikeBacks,
 } from './logic.js';
 import { icon, dogArt, resizeImage, SAFETY_ICON, walkScene } from './ui.js';
 import { mountMap } from './map.js';
@@ -12,7 +12,7 @@ import { mountMap } from './map.js';
 import {
   $, view, state, route, save, resetState, esc, person, course, matchOf, photosOf, media, characterArt,
   toast, openModal, closeModal, DAYS, fmtDate, safeBadge, segHtml, chipsHtml, bindToggles, segVal, chipVals,
-  go, setTop, render, updateBadge, registerView, startTicker, isWalkDone, switchHtml, notify, uid, onTick, walkWho,
+  go, setTop, render, updateBadge, registerView, startTicker, isWalkDone, switchHtml, notify, uid, onTick, walkWho, likesForMe,
 } from './core.js';
 import { startWalk, openGuardians, onWalkEnded, activeSession } from './safety.js';
 
@@ -142,6 +142,8 @@ function renderOnboarding() {
     save();
     go('discover');
     toast(`${me.dog.name}와(과) 산책할 친구를 찾아볼게요`);
+    const n = likesForMe().length;
+    if (n) setTimeout(() => notify(`${n}명이 ${me.dog.name}에게 좋아요를 보냈어요`, { kind: 'like', to: { name: 'matches' } }), 2600);
   };
 }
 
@@ -227,6 +229,56 @@ function cautionsHtml(list) {
   return `<div class="cautions"><h4>${icon('alert', 16)}만나기 전에 알아두세요</h4><ul>${list.map((c) => `<li>${esc(c)}</li>`).join('')}</ul></div>`;
 }
 
+// 프로필 카드 (탐색 카드와 받은 좋아요 상세에서 함께 씀)
+function profileHtml(p, c) {
+  const count = Math.max(1, photosOf(p).length);
+  const likedMe = isMutualMatch(state.me.id, p);
+  return `
+    <div class="pcard-photo">
+      ${count > 1 ? `<div class="bars">${Array.from({ length: count }, (_, i) => `<i class="${i === 0 ? 'on' : ''}"></i>`).join('')}</div>` : ''}
+      <div id="slide" style="height:100%">${media(p, 0)}</div>
+      <button class="tap l" aria-label="이전 사진"></button><button class="tap r" aria-label="다음 사진"></button>
+      <span class="match-chip">산책 궁합 <b>${c.score}%</b></span>
+      ${likedMe ? `<span class="liked-me">${icon('heart', 13, 'filled')}나에게 좋아요를 보냈어요</span>` : ''}
+      <div class="shade"></div>
+      <div class="cap">
+        <div class="name">${esc(p.dog.name)}<small>${p.dog.age}살</small></div>
+        <div class="meta">${esc(p.dog.breed)} · ${p.dog.size}견 · ${icon('pin', 14)} ${c.distanceKm}km</div>
+      </div>
+    </div>
+    <div class="pcard-info">
+      <div class="owner">
+        <div class="avatar">${esc(p.name[0])}</div>
+        <div><div class="n">보호자 ${esc(p.name)}</div><div class="s">${ageFromBirthYear(p.birthYear)}세 · ${esc(p.job)}</div></div>
+      </div>
+      <div class="badges">${badgesHtml(p)}</div>
+      <p class="bio">${esc(p.bio)}</p>
+      <div class="chips">
+        ${p.dog.traits.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}
+        <span class="tag">${p.dog.energy} 산책</span>
+        ${p.walkTimes.map((t) => `<span class="tag">${icon('clock', 13)}${t}</span>`).join('')}
+      </div>
+      <div class="label" style="margin-top:20px">${icon('syringe', 16)}${esc(p.dog.name)}의 건강 · 안전</div>
+      ${healthHtml(p.dog)}
+      ${c.reasons.length ? `<div class="why"><h4>우리가 잘 맞는 이유</h4><ul>${c.reasons.map((r) => `<li>${icon('check', 16)}${esc(r)}</li>`).join('')}</ul></div>` : ''}
+      ${cautionsHtml(c.cautions)}
+    </div>`;
+}
+
+// 사진 넘기기
+function bindSlides(root, p) {
+  const count = Math.max(1, photosOf(p).length);
+  if (count < 2) return;
+  let slide = 0;
+  const show = (i) => {
+    slide = (i + count) % count;
+    $('#slide', root).innerHTML = media(p, slide);
+    root.querySelectorAll('.bars i').forEach((b, j) => b.classList.toggle('on', j === slide));
+  };
+  root.querySelector('.tap.l').onclick = () => show(slide - 1);
+  root.querySelector('.tap.r').onclick = () => show(slide + 1);
+}
+
 // ---------- 탐색 ----------
 function candidates() {
   return rankCandidates(state.me, PEOPLE.filter((p) => !state.blocked.includes(p.id)), {
@@ -260,40 +312,11 @@ function renderDiscover() {
 
   const c = list[0];
   const p = c.person;
-  const count = Math.max(1, photosOf(p).length);
-  let slide = 0;
 
   view.innerHTML = `
     <div class="deck" id="deck">
       <article class="card-enter" id="pcard">
-        <div class="pcard-photo">
-          ${count > 1 ? `<div class="bars">${Array.from({ length: count }, (_, i) => `<i class="${i === 0 ? 'on' : ''}"></i>`).join('')}</div>` : ''}
-          <div id="slide" style="height:100%">${media(p, 0)}</div>
-          <button class="tap l" aria-label="이전 사진"></button><button class="tap r" aria-label="다음 사진"></button>
-          <span class="match-chip">산책 궁합 <b>${c.score}%</b></span>
-          <div class="shade"></div>
-          <div class="cap">
-            <div class="name">${esc(p.dog.name)}<small>${p.dog.age}살</small></div>
-            <div class="meta">${esc(p.dog.breed)} · ${p.dog.size}견 · ${icon('pin', 14)} ${c.distanceKm}km</div>
-          </div>
-        </div>
-        <div class="pcard-info">
-          <div class="owner">
-            <div class="avatar">${esc(p.name[0])}</div>
-            <div><div class="n">보호자 ${esc(p.name)}</div><div class="s">${ageFromBirthYear(p.birthYear)}세 · ${esc(p.job)}</div></div>
-          </div>
-          <div class="badges">${badgesHtml(p)}</div>
-          <p class="bio">${esc(p.bio)}</p>
-          <div class="chips">
-            ${p.dog.traits.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}
-            <span class="tag">${p.dog.energy} 산책</span>
-            ${p.walkTimes.map((t) => `<span class="tag">${icon('clock', 13)}${t}</span>`).join('')}
-          </div>
-          <div class="label" style="margin-top:20px">${icon('syringe', 16)}${esc(p.dog.name)}의 건강 · 안전</div>
-          ${healthHtml(p.dog)}
-          ${c.reasons.length ? `<div class="why"><h4>우리가 잘 맞는 이유</h4><ul>${c.reasons.map((r) => `<li>${icon('check', 16)}${esc(r)}</li>`).join('')}</ul></div>` : ''}
-          ${cautionsHtml(c.cautions)}
-        </div>
+        ${profileHtml(p, c)}
       </article>
     </div>
     <div class="actions">
@@ -301,13 +324,7 @@ function renderDiscover() {
       <button class="round like" id="like" aria-label="좋아요">${icon('heart', 28)}</button>
     </div>`;
 
-  const showSlide = (i) => {
-    slide = (i + count) % count;
-    $('#slide').innerHTML = media(p, slide);
-    view.querySelectorAll('.bars i').forEach((b, j) => b.classList.toggle('on', j === slide));
-  };
-  view.querySelector('.tap.l').onclick = () => count > 1 && showSlide(slide - 1);
-  view.querySelector('.tap.r').onclick = () => count > 1 && showSlide(slide + 1);
+  bindSlides(view, p);
   $('#pass').onclick = () => swipe(p, false);
   $('#like').onclick = () => swipe(p, true);
 }
@@ -335,6 +352,8 @@ function swipe(p, liked) {
   if (liked) heartBurst($('#like'));
   $('#pcard').classList.add(liked ? 'card-out-right' : 'card-out-left');
   state.seen.push(p.id);
+  if (!liked) state.passed.push(p.id);
+  else if (!isMutualMatch(state.me.id, p)) state.likesSent.push({ id: p.id, at: Date.now() });
   save();
   setTimeout(() => {
     if (liked && isMutualMatch(state.me.id, p)) {
@@ -411,16 +430,29 @@ function openFilters() {
 function renderMatches() {
   setTop('대화');
   const active = state.matches.filter((m) => !state.blocked.includes(m.personId));
+  const liked = likesForMe();
+  const waiting = state.likesSent.filter((l) => !l.answered && !matchOf(l.id) && !state.blocked.includes(l.id));
+  const likedHtml = liked.length ? `<div class="likes-card">
+      <div class="lk-head">${icon('heart', 18, 'filled')}<b>${liked.length}명이 ${esc(state.me.dog.name)}에게 좋아요를 보냈어요</b></div>
+      <div class="new-matches">${liked.map((p) => `<button data-liked="${p.id}"><div class="thumb">${media(p)}</div>${esc(p.dog.name)}</button>`).join('')}</div>
+      <p class="muted small" style="margin:4px 0 0">프로필을 보고 좋아요를 누르면 바로 매칭돼요</p>
+    </div>` : '';
+  const waitingHtml = waiting.length ? `<p class="muted small sent-likes">${icon('send', 14)}내가 좋아요를 보낸 ${waiting.length}명이 아직 답하지 않았어요</p>` : '';
+  if (!active.length && liked.length) {
+    view.innerHTML = likedHtml + waitingHtml + `<div class="empty" style="padding-top:32px">아직 대화 중인 친구가 없어요.<br/>나를 좋아한 친구부터 만나보세요!</div>`;
+    bindLiked();
+    return;
+  }
   if (!active.length) {
     view.innerHTML = `<div class="empty"><div class="ic-wrap">${icon('chat', 28)}</div>
-      <strong>아직 매칭이 없어요</strong>탐색에서 마음에 드는 친구에게<br/>좋아요를 눌러보세요.
+      <strong>아직 매칭이 없어요</strong>탐색에서 마음에 드는 친구에게<br/>좋아요를 눌러보세요.${waitingHtml}
       <div style="max-width:200px;margin:0 auto"><button class="btn" id="goDiscover">둘러보기</button></div></div>`;
     $('#goDiscover').onclick = () => go('discover');
     return;
   }
   const fresh = active.filter((m) => m.messages.every((x) => x.from !== 'me'));
 
-  view.innerHTML = `
+  view.innerHTML = `${likedHtml}${waitingHtml}
     ${fresh.length ? `<div class="label">새로운 매칭</div>
       <div class="new-matches">${fresh.map((m) => {
         const p = person(m.personId);
@@ -442,6 +474,33 @@ function renderMatches() {
     </div>`;
 
   view.querySelectorAll('[data-open]').forEach((b) => { b.onclick = () => go('chat', { id: b.dataset.open, back: 'matches' }); });
+  bindLiked();
+}
+
+function bindLiked() {
+  view.querySelectorAll('[data-liked]').forEach((b) => { b.onclick = () => openLikedProfile(person(b.dataset.liked)); });
+}
+
+// 나를 좋아한 사람의 프로필: 좋아요 → 바로 매칭
+function openLikedProfile(p) {
+  openModal(`<div class="sheet-profile">${profileHtml(p, compatibility(state.me, p))}</div>
+    <div class="sheet-foot row">
+      <button class="btn soft grow" id="lpPass">${icon('x', 18)}넘기기</button>
+      <button class="btn accent grow" id="lpLike">${icon('heart', 18, 'filled')}좋아요 · 매칭</button>
+    </div>`, (root) => {
+    bindSlides(root, p);
+    $('#lpPass', root).onclick = () => {
+      state.passed.push(p.id);
+      if (!state.seen.includes(p.id)) state.seen.push(p.id);
+      save(); closeModal(); render();
+    };
+    $('#lpLike', root).onclick = () => {
+      if (!state.seen.includes(p.id)) state.seen.push(p.id);
+      createMatch(p);
+      render();
+      showMatchModal(p);
+    };
+  });
 }
 
 // ---------- 채팅 ----------
@@ -1048,6 +1107,20 @@ function renderProfile() {
     go('onboarding', { step: 0 });
   };
 }
+
+// 데모: 내가 좋아요를 보낸 사람 중 일부가 잠시 뒤 좋아요로 답함
+onTick((now) => {
+  const back = dueLikeBacks(state.likesSent, PEOPLE, now);
+  back.forEach((p) => {
+    state.likesSent.find((l) => l.id === p.id).answered = true;
+    if (state.blocked.includes(p.id) || matchOf(p.id)) return;
+    createMatch(p);
+    notify(`${p.name}님도 ${state.me.dog.name}에게 좋아요를 눌렀어요! 매칭됐어요`, { kind: 'match', to: { name: 'chat', id: p.id, back: 'matches' } });
+    updateBadge();
+    if (route.name === 'matches') renderMatches();
+  });
+  if (back.length) save();
+});
 
 // 산책 전날 · 1시간 전 알림
 onTick((now) => {

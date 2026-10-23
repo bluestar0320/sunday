@@ -326,3 +326,18 @@ export function dueReminders(walks, fired, now) {
     .flatMap((w) => reminderTimes(w).map((r) => ({ ...r, walk: w })))
     .filter((r) => r.at <= now && !done.has(r.key));
 }
+
+// ---------- 받은 좋아요 ----------
+// 나를 좋아요 했지만 아직 매칭되지 않았고, 내가 넘기지도 않은 사람
+export function receivedLikes(me, people, { matched = [], passed = [], blocked = [] } = {}) {
+  const skip = new Set([...matched, ...passed, ...blocked]);
+  return people.filter((p) => isMutualMatch(me.id, p) && !skip.has(p.id));
+}
+
+// 내가 보낸 좋아요에 상대가 답할 차례인지 (데모: likesBack인 사람은 delayMs 뒤 좋아요)
+export function dueLikeBacks(likesSent, people, now, delayMs = 8000) {
+  return likesSent
+    .filter((l) => !l.answered && now - l.at >= delayMs)
+    .map((l) => people.find((p) => p.id === l.id))
+    .filter((p) => p?.likesBack);
+}

@@ -7,6 +7,7 @@ import {
   positionAlongPath, sessionStatus, normalizePhone,
   healthFlags, isVerified, validRegistryNo,
   forecastFor, respondToProposal, reminderTimes, dueReminders,
+  receivedLikes, dueLikeBacks,
 } from '../js/logic.js';
 import { PEOPLE, COURSES, DEFAULT_ME } from '../js/data.js';
 
@@ -229,4 +230,18 @@ test('dueReminders: 확정된 약속의 전날·1시간 전 알림을 한 번씩
   assert.deepEqual(dueReminders([w], ['w1:day'], start - 30 * 60000).map((r) => r.kind), ['hour']);
   assert.equal(dueReminders([w], [], start + 60000).length, 0); // 약속 시간이 지나면 보내지 않음
   assert.equal(dueReminders([{ ...w, status: 'pending' }], [], start - 30 * 60000).length, 0);
+});
+
+test('receivedLikes: 나를 좋아한 사람 중 매칭·넘김·차단 제외', () => {
+  const all = receivedLikes(me, PEOPLE).map((p) => p.id);
+  assert.deepEqual(all, PEOPLE.filter((p) => p.likes.includes('me')).map((p) => p.id));
+  const left = receivedLikes(me, PEOPLE, { matched: ['p1'], passed: ['p3'], blocked: ['p4'] }).map((p) => p.id);
+  assert.ok(!left.includes('p1') && !left.includes('p3') && !left.includes('p4'));
+  assert.ok(left.includes('p8'));
+});
+
+test('dueLikeBacks: likesBack인 사람만, 시간이 지난 뒤 한 번', () => {
+  const sent = [{ id: 'p2', at: 0 }, { id: 'p7', at: 0 }, { id: 'p5', at: 0, answered: true }];
+  assert.deepEqual(dueLikeBacks(sent, PEOPLE, 5000).map((p) => p.id), []);
+  assert.deepEqual(dueLikeBacks(sent, PEOPLE, 9000).map((p) => p.id), ['p2']);
 });

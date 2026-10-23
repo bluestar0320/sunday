@@ -1,6 +1,6 @@
 // 앱 전체가 함께 쓰는 상태·저장·화면 전환·공통 UI
 import { PEOPLE, COURSES, DEFAULT_ME, GROUPS } from './data.js';
-import { SIZES } from './logic.js';
+import { SIZES, receivedLikes } from './logic.js';
 import { icon, dogArt } from './ui.js';
 
 const STORAGE_KEY = 'walkdate:v2';
@@ -13,7 +13,8 @@ export function freshState() {
     onboarded: false,
     me: structuredClone(DEFAULT_ME),
     seen: [],
-    likesSent: [],    // 내가 좋아요를 보낸 사람 (아직 매칭 전)
+    likesSent: [],    // 내가 좋아요를 보낸 사람 { id, at, answered }
+    passed: [],       // 내가 넘긴 사람
     matches: [],      // { personId, matchedAt, messages: [{from, text, at, kind, walkId, read}], unread }
     walks: [],        // { id, personId | groupId, courseId, datetime, slot, status, from, review, session }
     blocked: [],
@@ -141,6 +142,10 @@ export function safeBadge(level) {
   return `<span class="safe-badge lv-${level}">${icon(level === '주의' ? 'alert' : 'shield', 13)}${level}</span>`;
 }
 
+export const likesForMe = () => (state.onboarded ? receivedLikes(state.me, PEOPLE, {
+  matched: state.matches.map((m) => m.personId), passed: state.passed, blocked: state.blocked,
+}).filter((p) => state.me.lookingFor === '모두' || p.gender === state.me.lookingFor) : []);
+
 // ---------- 폼 토글 ----------
 export function segHtml(name, options, value) {
   return `<div class="seg" data-seg="${name}">${options.map((o) => `<button type="button" data-v="${esc(o)}" class="${o === value ? 'on' : ''}">${esc(o)}</button>`).join('')}</div>`;
@@ -201,7 +206,7 @@ export function render() {
 export function updateBadge() {
   const btn = $('#tabbar [data-tab="matches"]');
   btn.querySelector('.badge')?.remove();
-  const unread = state.matches.filter((m) => m.unread && !state.blocked.includes(m.personId)).length;
+  const unread = state.matches.filter((m) => m.unread && !state.blocked.includes(m.personId)).length + likesForMe().length;
   if (unread) btn.insertAdjacentHTML('beforeend', `<i class="badge">${unread}</i>`);
 }
 

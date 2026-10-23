@@ -185,6 +185,7 @@ export const PEOPLE = [
     dog: { name: '콩이', breed: '시바견', size: '중형', age: 4, energy: '보통', friendly: true, traits: ['독립적', '간식에 진심'], health: { vaccinated: true, neutered: true, bite: false, allergies: '닭고기' } },
     verified: { phone: true, registry: true },
     likes: [],
+    likesBack: true, // 데모: 내가 좋아요를 보내면 잠시 뒤 좋아요로 답함
   },
   {
     id: 'p3', name: '서연', gender: '여성', birthYear: 1997, job: '초등교사',
@@ -212,6 +213,7 @@ export const PEOPLE = [
     dog: { name: '두부', breed: '비숑 프리제', size: '소형', age: 1, energy: '활발', friendly: true, traits: ['솜사탕', '에너지 폭발'], health: { vaccinated: false, neutered: false, bite: false, allergies: '' } },
     verified: { phone: true, registry: false },
     likes: [],
+    likesBack: true, // 데모: 내가 좋아요를 보내면 잠시 뒤 좋아요로 답함
   },
   {
     id: 'p6', name: '준호', gender: '남성', birthYear: 1996, job: '대학원생',
