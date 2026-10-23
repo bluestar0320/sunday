@@ -675,3 +675,17 @@ a.btn { text-decoration: none; }
 .cautions ul { margin: 0; padding-left: 18px; display: grid; gap: 5px; font-size: 14px; color: var(--text-2); }
 .notice.warn { background: var(--warn-soft); }
 .notice.warn .ic { color: var(--warn); }
+
+/* 일정 조율 · 날씨 */
+.walk-card.them { align-self: flex-start; }
+.walk-card .wc-state { font-size: 12px; font-weight: 700; color: var(--accent); }
+.walk-card.st-replaced, .walk-card.st-declined, .walk-card.st-cancelled { opacity: .55; }
+.walk-card.st-replaced .wc-foot, .walk-card.st-declined .wc-foot, .walk-card.st-cancelled .wc-foot { display: none; }
+.walk-card .wc-act { display: flex; gap: 6px; padding: 10px 12px 12px; border-top: 1px dashed var(--line); }
+.walk-card .wc-act .btn { flex: 1; padding: 0 8px; }
+.wx { display: inline-flex; align-items: center; gap: 3px; height: 22px; padding: 0 8px; border-radius: 999px; background: #E9F1F7; color: #4F7EA3; font-size: 12px; font-weight: 600; }
+.wx.rainy { background: #DCE8F4; color: #2F6497; }
+@media (prefers-color-scheme: dark) { .wx { background: #1B2A36; color: #9CC3E2; } .wx.rainy { background: #1E3346; } }
+button.tag.rainy .ic { color: #4F7EA3; }
+.walk .info .muted.small { display: flex; align-items: center; gap: 6px; }
+.messages > * { flex-shrink: 0; }

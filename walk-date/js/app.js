@@ -4,6 +4,7 @@ import {
   rankCandidates, compatibility, recommendCourses, courseSafety, isMutualMatch,
   averageRating, walkStatus, ageFromBirthYear, midpoint, hazardSegments,
   healthFlags, isVerified, validRegistryNo, normalizePhone,
+  forecastFor, respondToProposal, reminderTimes, dueReminders,
 } from './logic.js';
 import { icon, dogArt, resizeImage, SAFETY_ICON, walkScene } from './ui.js';
 import { mountMap } from './map.js';
@@ -11,7 +12,7 @@ import { mountMap } from './map.js';
 import {
   $, view, state, route, save, resetState, esc, person, course, matchOf, photosOf, media, characterArt,
   toast, openModal, closeModal, DAYS, fmtDate, safeBadge, segHtml, chipsHtml, bindToggles, segVal, chipVals,
-  go, setTop, render, updateBadge, registerView, startTicker, isWalkDone, switchHtml, notify,
+  go, setTop, render, updateBadge, registerView, startTicker, isWalkDone, switchHtml, notify, uid, onTick, walkWho,
 } from './core.js';
 import { startWalk, openGuardians, onWalkEnded, activeSession } from './safety.js';
 
@@ -457,8 +458,9 @@ function renderChat() {
   setTop(`${p.name} · ${p.dog.name}`, { back: true, actions: `<button class="icon-btn" id="more" aria-label="안전 메뉴">${icon('more', 22)}</button>` });
 
   const w = activeWalk(p.id);
+  const waitingMe = w && w.status === 'pending' && (w.from || 'me') !== 'me';
   const plan = w
-    ? `<div class="grow"><b>${fmtDate(w.datetime)}</b><span>${esc(course(w.courseId).name)} · ${w.status === 'pending' ? '수락 대기 중' : '약속 확정'}</span></div>
+    ? `<div class="grow"><b>${fmtDate(w.datetime)}</b><span>${esc(course(w.courseId).name)} · ${waitingMe ? '내 답을 기다려요' : w.status === 'pending' ? '답을 기다리는 중' : '약속 확정'}</span></div>
        <button class="btn sm outline" id="planBtn">일정 보기</button>`
     : `<div class="grow"><b>첫 산책을 제안해 보세요</b><span>안심 코스로 추천해 드려요</span></div>
        <button class="btn sm accent" id="planBtn">${icon('route', 16)}코스 추천</button>`;
@@ -484,11 +486,20 @@ function renderChat() {
   };
   $('#planBtn').onclick = () => (w ? go('walks') : openProposal(p));
   $('#msgs').onclick = (e) => {
+    if (handleWalkAction(e)) return;
     const card = e.target.closest('[data-map]');
     const walk = card && state.walks.find((x) => x.id === card.dataset.map);
     if (walk) openCourseMap(walk.courseId, walk.slot, p.id);
   };
   $('#more').onclick = () => openSafetyMenu(p);
+}
+
+const WALK_STATE = { pending: '답을 기다리는 중', confirmed: '약속 확정', declined: '거절됨', replaced: '다른 시간으로 바뀌었어요', cancelled: '취소됨' };
+const SKY_ICON = { '맑음': 'sunny', '흐림': 'cloud', '비': 'rain' };
+
+function weatherHtml(iso, { full = false } = {}) {
+  const f = forecastFor(iso);
+  return `<span class="wx ${f.rainy ? 'rainy' : ''}">${icon(SKY_ICON[f.sky], 14)}${f.sky}${full ? ` ${f.tempC}° · 강수 ${f.rainProb}%` : ''}</span>`;
 }
 
 function msgHtml(msg) {
@@ -498,13 +509,20 @@ function msgHtml(msg) {
     if (!w) return '';
     const c = course(w.courseId);
     const s = courseSafety(c, w.slot);
-    return `<div class="walk-card" role="button" tabindex="0" data-map="${w.id}">
-      <div class="wc-head">${icon('route', 18)}<span class="grow">산책 제안</span>${safeBadge(s.level)}</div>
+    const mine = (w.from || 'me') === 'me';
+    const waitingMe = w.status === 'pending' && !mine;
+    return `<div class="walk-card ${mine ? '' : 'them'} st-${w.status}" role="button" tabindex="0" data-map="${w.id}">
+      <div class="wc-head">${icon('route', 18)}<span class="grow">${mine ? '내 산책 제안' : `${esc(person(w.personId).name)}님의 산책 제안`}</span>${safeBadge(s.level)}</div>
       <div class="wc-body">
-        <div>${icon('clock', 16)}${fmtDate(w.datetime)}</div>
+        <div>${icon('clock', 16)}${fmtDate(w.datetime)} ${weatherHtml(w.datetime)}</div>
         <div>${icon('pin', 16)}${esc(c.name)} · 약 ${c.minutes}분</div>
+        <div class="wc-state">${waitingMe ? '내 답을 기다리고 있어요' : WALK_STATE[w.status] || ''}</div>
       </div>
-      <div class="wc-foot">${icon('route', 16)}코스 지도 보기</div>
+      ${waitingMe ? `<div class="wc-act">
+        <button class="btn sm accent" data-w-accept="${w.id}">수락</button>
+        <button class="btn sm soft" data-w-counter="${w.id}">다른 시간</button>
+        <button class="btn sm text" data-w-decline="${w.id}">거절</button>
+      </div>` : `<div class="wc-foot">${icon('route', 16)}코스 지도 보기</div>`}
     </div>`;
   }
   return `<div class="msg ${msg.from === 'me' ? 'me' : 'them'}">${esc(msg.text)}</div>`;
@@ -541,10 +559,10 @@ function fakeReply(p, text) {
 // ---------- 산책 제안 (안심 코스) ----------
 const SLOT_HOUR = { '이른 아침': 7, '점심': 12, '저녁': 18, '밤': 21 };
 
-function courseHtml(c, selected) {
+function courseHtml(c, selected, tag = '') {
   const s = c.safety;
   return `<div class="course ${selected ? 'on' : ''}" data-id="${c.id}" role="button" tabindex="0" aria-pressed="${selected}">
-    <div class="top"><span class="t">${esc(c.name)}</span>${safeBadge(s.level)}</div>
+    <div class="top"><span class="t">${esc(c.name)}</span>${tag ? `<span class="tag" style="height:24px;font-size:12px">${esc(tag)}</span>` : ''}${safeBadge(s.level)}</div>
     <div class="m">${c.type} · ${c.roundTrip ? '왕복 ' : ''}${c.lengthKm}km · 약 ${c.minutes}분 · 중간 지점에서 ${c.distanceKm}km</div>
     <div class="sig">${s.checks.map((k) => `<span class="${k.ok ? '' : 'bad'}" title="${esc(k.label)}">${icon(SAFETY_ICON[k.key], 16)}</span>`).join('')}</div>
     ${selected ? `<div class="mini-map" id="miniMap"></div>
@@ -556,23 +574,39 @@ function courseHtml(c, selected) {
   </div>`;
 }
 
-function openProposal(p) {
+// replace: 바꾸려는 기존 약속(다른 시간 제안), courseId: 미리 고른 코스(또 걸어요)
+function openProposal(p, { replace = null, courseId = null } = {}) {
   const common = state.me.walkTimes.filter((t) => p.walkTimes.includes(t));
   const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i + 1); return d; });
   const dayLabel = (d, i) => (i === 0 ? '내일' : `${d.getMonth() + 1}/${d.getDate()} ${DAYS[d.getDay()]}`);
-  const ui = { slot: common[0] || p.walkTimes[0], day: 0, safeOnly: state.me.safeMode !== false, courseId: null };
+  const sameDay = (a, b) => a.toDateString() === b.toDateString();
+  const startDay = replace ? Math.max(0, days.findIndex((d) => sameDay(d, new Date(replace.datetime)))) : 0;
+  const ui = {
+    slot: replace?.slot || common[0] || p.walkTimes[0], day: startDay,
+    safeOnly: state.me.safeMode !== false, courseId: replace?.courseId || courseId,
+  };
+  const pinned = ui.courseId;
   const { cautions } = compatibility(state.me, p);
+  const title = replace ? '다른 시간 제안하기' : courseId ? '또 같이 걸어요' : '첫 산책 제안하기';
 
   openModal('', (root) => {
     const draw = () => {
-      const { courses, hiddenCount } = recommendCourses(state.me, p, COURSES, { slot: ui.slot, safeOnly: ui.safeOnly, limit: 4 });
+      const { courses: all, hiddenCount } = recommendCourses(state.me, p, COURSES, { slot: ui.slot, safeOnly: ui.safeOnly, limit: 99 });
+      const courses = all.slice(0, 4);
+      const pin = all.find((c) => c.id === pinned);
+      if (pin && !courses.includes(pin)) courses.unshift(pin);
       if (!courses.some((c) => c.id === ui.courseId)) ui.courseId = courses[0]?.id ?? null;
+      const f = forecastFor(days[ui.day]);
       const scroll = root.scrollTop;
       root.innerHTML = `
-        <h3>첫 산책 제안하기</h3>
+        <h3>${title}</h3>
         <p class="desc">두 분 사이 중간 지점 근처에서, 선택한 시간대에 안전한 코스를 추천해요.</p>
-        <div class="label">날짜</div>
-        <div class="chips" data-seg="day">${days.map((d, i) => `<button type="button" class="tag ${i === ui.day ? 'on' : ''}" data-v="${i}">${dayLabel(d, i)}</button>`).join('')}</div>
+        <div class="label">날짜 <span class="muted small" style="font-weight:400">데모 예보</span></div>
+        <div class="chips" data-seg="day">${days.map((d, i) => {
+          const fd = forecastFor(d);
+          return `<button type="button" class="tag ${i === ui.day ? 'on' : ''} ${fd.rainy ? 'rainy' : ''}" data-v="${i}">${dayLabel(d, i)} ${icon(SKY_ICON[fd.sky], 14)}</button>`;
+        }).join('')}</div>
+        ${f.rainy ? `<div class="notice warn" style="margin-top:10px">${icon('rain', 18)}<span>이날은 비 예보(강수확률 ${f.rainProb}%)가 있어요. 다른 날을 추천해요.</span></div>` : ''}
         <div class="label">시간대 ${common.includes(ui.slot) ? '<span class="tag" style="height:24px;font-size:12px">둘 다 선호</span>' : ''}</div>
         ${segHtml('slot', TIME_SLOTS, ui.slot)}
         <div class="label">추천 코스</div>
@@ -582,15 +616,15 @@ function openProposal(p) {
           <span class="switch"><input type="checkbox" id="safeOnly" ${ui.safeOnly ? 'checked' : ''} /><span></span></span>
         </label>
         ${ui.safeOnly && hiddenCount ? `<div class="hidden-note">${icon('eye', 16)}<span>${ui.slot}에 으슥한 코스 ${hiddenCount}곳을 숨겼어요</span><button id="showAll">모두 보기</button></div>` : ''}
-        <div id="courses">${courses.length ? courses.map((c) => courseHtml(c, c.id === ui.courseId)).join('') : '<p class="muted small">이 시간대에 추천할 만한 안심 코스가 없어요. 다른 시간대를 골라보세요.</p>'}</div>
+        <div id="courses">${courses.length ? courses.map((c) => courseHtml(c, c.id === ui.courseId, c.id === pinned && courseId ? '지난번 코스' : '')).join('') : '<p class="muted small">이 시간대에 추천할 만한 안심 코스가 없어요. 다른 시간대를 골라보세요.</p>'}</div>
         ${cautions.length ? `<div class="notice warn" style="margin-bottom:10px">${icon('alert', 18)}<span>${cautions.map(esc).join('<br/>')}</span></div>` : ''}
         <div class="notice">${icon('shield', 18)}<span>첫 만남은 밝은 시간, 사람이 많은 곳을 추천해요. 약속 정보를 지인에게 공유해 두면 더 안심이에요.</span></div>
-        <div class="sheet-foot"><button class="btn accent" id="send" ${ui.courseId ? '' : 'disabled'}>산책 제안 보내기</button></div>`;
+        <div class="sheet-foot"><button class="btn accent" id="send" ${ui.courseId ? '' : 'disabled'}>${replace ? '이 시간으로 다시 제안하기' : '산책 제안 보내기'}</button></div>`;
       root.scrollTop = scroll;
 
       bindToggles(root, (name, v) => {
         if (name === 'slot') { ui.slot = v; draw(); }
-        if (name === 'day') ui.day = Number(v);
+        if (name === 'day') { ui.day = Number(v); draw(); }
       });
       $('#safeOnly', root).onchange = (e) => { ui.safeOnly = e.target.checked; draw(); };
       $('#showAll', root)?.addEventListener('click', () => { ui.safeOnly = false; draw(); });
@@ -602,35 +636,89 @@ function openProposal(p) {
       };
       const mini = $('#miniMap', root);
       if (mini) mountMap(mini, { course: course(ui.courseId), slot: ui.slot, mid: midpoint(state.me, p), interactive: false });
-      $('#send', root).onclick = () => sendProposal(p, ui, days);
+      $('#send', root).onclick = () => sendProposal(p, ui, days, replace);
     };
     draw();
   });
 }
 
-function sendProposal(p, ui, days) {
+function sendProposal(p, ui, days, replace) {
   const c = course(ui.courseId);
   const safety = courseSafety(c, ui.slot);
   if (safety.level === '주의' && !confirm(`${c.name}은(는) ${ui.slot}에 인적이 드물거나 어두운 구간이 있어요.\n그래도 이 코스로 제안할까요?`)) return;
 
   const d = new Date(days[ui.day]);
   d.setHours(SLOT_HOUR[ui.slot], 0, 0, 0);
-  const walk = { id: `w${Date.now()}`, personId: p.id, courseId: c.id, datetime: d.toISOString(), slot: ui.slot, status: 'pending', review: null };
+  const walk = { id: uid('w'), personId: p.id, courseId: c.id, datetime: d.toISOString(), slot: ui.slot, status: 'pending', from: 'me', review: null };
+  if (replace) { replace.status = 'replaced'; walk.replaces = replace.id; }
   state.walks.push(walk);
   save();
   closeModal();
   pushMsg(p.id, { from: 'me', kind: 'walk', walkId: walk.id, text: '' });
-  toast('산책 제안을 보냈어요');
-  renderChat();
-  // 데모: 상대방이 잠시 후 수락
-  setTimeout(() => {
-    walk.status = 'confirmed';
-    save();
-    pushMsg(p.id, { from: 'system', text: `${p.name}님이 산책 약속을 수락했어요` });
+  toast(replace ? '다른 시간을 제안했어요' : '산책 제안을 보냈어요');
+  refreshWalkViews(p.id);
+  setTimeout(() => partnerResponds(p, walk), 2500); // 데모: 상대방이 잠시 후 답한다
+}
+
+// 데모: 상대방의 답 (수락하거나, 비·시간대·안전 때문에 다른 시간을 제안)
+function partnerResponds(p, walk) {
+  if (walk.status !== 'pending') return;
+  const c = course(walk.courseId);
+  const r = respondToProposal(p, { slot: walk.slot, date: walk.datetime, courseLevel: courseSafety(c, walk.slot).level });
+  if (r.action === 'accept') {
+    confirmWalk(walk, p, false);
     fakeReply(p, `좋아요! ${c.name}에서 봬요. ${p.dog.name}도 벌써 신났어요 🐾`);
-    if (route.name === 'chat' && route.id === p.id) renderChat();
-    if (route.name === 'walks') renderWalks();
-  }, 2500);
+    return;
+  }
+  walk.status = 'replaced';
+  const d = new Date(walk.datetime);
+  d.setDate(d.getDate() + r.dayShift);
+  d.setHours(SLOT_HOUR[r.slot], 0, 0, 0);
+  let courseId = walk.courseId;
+  if (r.saferCourse || courseSafety(c, r.slot).level === '주의') {
+    courseId = recommendCourses(state.me, p, COURSES, { slot: r.slot, safeOnly: true, limit: 1 }).courses[0]?.id || courseId;
+  }
+  const counter = { id: uid('w'), personId: p.id, courseId, datetime: d.toISOString(), slot: r.slot, status: 'pending', from: p.id, replaces: walk.id, review: null };
+  state.walks.push(counter);
+  save();
+  pushMsg(p.id, { from: p.id, text: `${r.reason} 이 시간은 어떠세요?` });
+  pushMsg(p.id, { from: p.id, kind: 'walk', walkId: counter.id, text: '' });
+  notify(`${p.name}님이 다른 시간을 제안했어요`, { kind: 'reminder', to: { name: 'chat', id: p.id, back: 'matches' } });
+  refreshWalkViews(p.id);
+}
+
+function confirmWalk(walk, p, byMe) {
+  walk.status = 'confirmed';
+  save();
+  pushMsg(p.id, { from: 'system', text: byMe ? `산책 약속이 확정됐어요 · ${fmtDate(walk.datetime)}` : `${p.name}님이 산책 약속을 수락했어요` });
+  if (!byMe) notify(`${p.name}님과 ${fmtDate(walk.datetime)} 산책이 확정됐어요`, { kind: 'reminder', to: { name: 'walks' } });
+  refreshWalkViews(p.id);
+}
+
+function declineWalk(walk, p) {
+  walk.status = 'declined';
+  save();
+  pushMsg(p.id, { from: 'system', text: '산책 제안을 거절했어요' });
+  refreshWalkViews(p.id);
+}
+
+// 제안 카드·일정 버튼 공통 처리 (채팅과 산책 일정 화면에서 함께 씀)
+function handleWalkAction(e) {
+  const t = e.target.closest('[data-w-accept],[data-w-decline],[data-w-counter],[data-w-change]');
+  if (!t) return false;
+  e.stopPropagation();
+  const id = t.dataset.wAccept || t.dataset.wDecline || t.dataset.wCounter || t.dataset.wChange;
+  const w = state.walks.find((x) => x.id === id);
+  const p = person(w.personId);
+  if (t.dataset.wAccept) confirmWalk(w, p, true);
+  else if (t.dataset.wDecline) { if (confirm('이 산책 제안을 거절할까요?')) declineWalk(w, p); }
+  else openProposal(p, { replace: w });
+  return true;
+}
+
+function refreshWalkViews(personId) {
+  if (route.name === 'chat' && route.id === personId) renderChat();
+  if (route.name === 'walks') renderWalks();
 }
 
 // 코스 지도 전체 화면 (모달 위에 겹쳐 열림)
@@ -716,9 +804,11 @@ function openSafetyMenu(p) {
 }
 
 // ---------- 산책 일정 ----------
+const HIDDEN_WALK = ['cancelled', 'declined', 'replaced'];
+
 function renderWalks() {
   setTop('산책 일정');
-  const walks = state.walks.filter((w) => !state.blocked.includes(w.personId) && w.status !== 'cancelled');
+  const walks = state.walks.filter((w) => !state.blocked.includes(w.personId) && !HIDDEN_WALK.includes(w.status));
   if (!walks.length) {
     view.innerHTML = `<div class="empty"><div class="ic-wrap">${icon('calendar', 28)}</div>
       <strong>예정된 산책이 없어요</strong>대화방에서 <b>코스 추천</b>을 눌러<br/>첫 산책을 제안해 보세요.</div>`;
@@ -726,40 +816,56 @@ function renderWalks() {
   }
   const sorted = [...walks].sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
   const label = (w) => {
-    if (w.status === 'pending') return ['pending', '수락 대기'];
+    if (w.status === 'pending') return (w.from || 'me') === 'me' ? ['pending', '답 기다리는 중'] : ['pending', '내 답이 필요해요'];
     if (w.session && !w.session.endedAt) return ['ongoing', '안심 산책 중'];
     if (isWalkDone(w)) return ['done', '완료'];
-    return { upcoming: ['upcoming', '예정'], ongoing: ['ongoing', '산책 중'], done: ['done', '완료'] }[walkStatus(w)];
+    return { upcoming: ['upcoming', '예정'], ongoing: ['ongoing', '산책 시간'], done: ['done', '완료'] }[walkStatus(w)];
   };
 
   view.innerHTML = sorted.map((w) => {
     const p = person(w.personId);
     const c = course(w.courseId);
     const s = courseSafety(c, w.slot);
+    const f = forecastFor(w.datetime);
     const [cls, txt] = label(w);
     const done = isWalkDone(w);
     const live = w.session && !w.session.endedAt;
+    const theirTurn = w.status === 'pending' && (w.from || 'me') !== 'me';
+    const reminders = reminderTimes(w).filter((r) => r.at > Date.now());
+    let actions;
+    if (done) {
+      actions = w.review
+        ? `<button class="btn soft sm grow" disabled>평가 완료 · ${w.review.rating}점</button>`
+        : `<button class="btn sm grow" data-review="${w.id}">매너 평가</button>`;
+    } else if (theirTurn) {
+      actions = `<button class="btn sm accent grow" data-w-accept="${w.id}">수락</button>
+        <button class="btn soft sm grow" data-w-counter="${w.id}">다른 시간</button>
+        <button class="btn soft sm grow" data-w-decline="${w.id}">거절</button>`;
+    } else {
+      actions = `${w.status === 'confirmed' && !live ? `<button class="btn soft sm grow" data-w-change="${w.id}">일정 변경</button>` : ''}
+        <button class="btn soft sm grow" data-cancel="${w.id}">취소</button>
+        ${w.status === 'confirmed' ? `<button class="btn outline sm grow" data-finish="${w.id}" title="데모: 산책을 완료 처리">완료 처리</button>` : ''}`;
+    }
     return `<div class="walk">
       <div class="head"><span class="when">${fmtDate(w.datetime)}</span><span class="status ${cls}">${txt}</span></div>
       <div class="info">
         <div>${icon('pin', 16)}${esc(c.name)} · ${c.lengthKm}km</div>
         <div>${icon('user', 16)}${esc(p.name)} · ${esc(p.dog.name)}</div>
         <div>${icon('shield', 16)}${w.slot} 기준 안전도 ${safeBadge(s.level)}</div>
+        <div>${icon(SKY_ICON[f.sky], 16)}예보 ${weatherHtml(w.datetime, { full: true })}</div>
+        ${w.status === 'confirmed' && !done && reminders.length ? `<div class="muted small">${icon('bell', 14)}알림 예정 · ${reminders.map((r) => `${r.kind === 'day' ? '전날' : '1시간 전'} ${fmtDate(new Date(r.at).toISOString())}`).join(' · ')}</div>` : ''}
       </div>
+      ${f.rainy && !done && w.status === 'confirmed' ? `<div class="notice warn" style="margin:-4px 0 12px">${icon('rain', 18)}<span>비 예보가 있어요. 일정 변경을 제안해 보세요.</span></div>` : ''}
       <div class="row">
         <button class="btn soft sm grow" data-chat="${p.id}">대화</button>
         <button class="btn soft sm grow" data-course="${w.id}">${icon('route', 16)}지도</button>
-        ${done
-          ? (w.review
-            ? `<button class="btn soft sm grow" disabled>평가 완료 · ${w.review.rating}점</button>`
-            : `<button class="btn sm grow" data-review="${w.id}">매너 평가</button>`)
-          : `<button class="btn soft sm grow" data-cancel="${w.id}">취소</button>
-             <button class="btn outline sm grow" data-finish="${w.id}" title="데모: 산책을 완료 처리">완료 처리</button>`}
+        ${actions}
       </div>
       ${!done && w.status === 'confirmed' ? `<button class="btn ${live ? 'sos' : 'accent'} start-walk" data-start="${w.id}">${icon(live ? 'shield' : 'play', 18)}${live ? '안심 산책 화면 열기' : '안심 산책 시작'}</button>` : ''}
     </div>`;
   }).join('') + '<p class="muted small" style="text-align:center;margin-top:8px">산책이 끝나면 매너 평가를 남겨주세요. 평가는 익명으로 반영돼요.</p>';
 
+  view.onclick = (e) => { if (route.name === 'walks') handleWalkAction(e); };
   view.querySelectorAll('[data-chat]').forEach((b) => { b.onclick = () => go('chat', { id: b.dataset.chat, back: 'walks' }); });
   view.querySelectorAll('[data-course]').forEach((b) => {
     b.onclick = () => { const w = state.walks.find((x) => x.id === b.dataset.course); openCourseMap(w.courseId, w.slot, w.personId); };
@@ -767,7 +873,7 @@ function renderWalks() {
   view.querySelectorAll('[data-cancel]').forEach((b) => {
     b.onclick = () => {
       const w = state.walks.find((x) => x.id === b.dataset.cancel);
-      if (!confirm('산책 약속을 취소할까요?')) return;
+      if (!confirm(w.status === 'pending' ? '산책 제안을 취소할까요?' : '산책 약속을 취소할까요?')) return;
       w.status = 'cancelled';
       save();
       pushMsg(w.personId, { from: 'system', text: '산책 약속이 취소됐어요' });
@@ -778,7 +884,6 @@ function renderWalks() {
   view.querySelectorAll('[data-finish]').forEach((b) => {
     b.onclick = () => {
       const w = state.walks.find((x) => x.id === b.dataset.finish);
-      w.status = 'confirmed';
       w.datetime = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
       w.completedAt = Date.now();
       save();
@@ -906,6 +1011,7 @@ function renderProfile() {
       <div class="grow"><div class="t">안심 코스 우선 추천</div><div class="d">산책 제안 시 인적 드물거나 어두운 코스를 숨겨요</div></div>
       <span class="switch"><input type="checkbox" id="safeMode" ${me.safeMode !== false ? 'checked' : ''} /><span></span></span>
     </label>
+    <label class="switch-row" style="margin-top:8px;background:var(--accent-soft)">${icon('bell', 22)}<div class="grow"><div class="t">기기 알림 받기</div><div class="d">산책 전날 · 1시간 전 알림, 안심 산책 알림을 휴대폰 알림으로도 보내요</div></div>${switchHtml('deviceNotify', state.settings.deviceNotify)}</label>
     <button class="menu-item" id="guardians" style="margin-top:8px">${icon('users', 20)}<span class="grow" style="text-align:left">안심 연락처 · 자동 알림 설정</span><span class="muted small">${state.guardians.length}명</span></button>
 
     <div class="label">프로필</div>
@@ -916,6 +1022,16 @@ function renderProfile() {
   bindPhotoGrid(view, () => { $('.me-head .thumb').innerHTML = media(me); });
   $('#safeMode').onchange = (e) => { me.safeMode = e.target.checked; save(); toast(e.target.checked ? '안심 코스만 추천할게요' : '모든 코스를 추천할게요'); };
   $('#guardians').onclick = () => openGuardians(() => render());
+  $('#deviceNotify').onchange = async (e) => {
+    if (e.target.checked && 'Notification' in window && Notification.permission !== 'granted') {
+      const perm = await Notification.requestPermission().catch(() => 'denied');
+      if (perm !== 'granted') { e.target.checked = false; toast('브라우저에서 알림이 허용되지 않았어요'); return; }
+    }
+    if (e.target.checked && !('Notification' in window)) { e.target.checked = false; toast('이 브라우저는 알림을 지원하지 않아요'); return; }
+    state.settings.deviceNotify = e.target.checked;
+    save();
+    toast(e.target.checked ? '기기 알림을 켰어요' : '기기 알림을 껐어요');
+  };
   $('#vPhone').onclick = openPhoneVerify;
   $('#vRegistry').onclick = openRegistryVerify;
   $('#editMe').onclick = () => openModal(`<h3>보호자 정보</h3><div style="height:16px"></div>${personFields(me)}<div class="sheet-foot"><button class="btn" id="save">저장</button></div>`, (root) => {
@@ -932,6 +1048,22 @@ function renderProfile() {
     go('onboarding', { step: 0 });
   };
 }
+
+// 산책 전날 · 1시간 전 알림
+onTick((now) => {
+  const due = dueReminders(state.walks.filter((w) => !state.blocked.includes(w.personId)), state.fired, now);
+  due.forEach((r) => {
+    state.fired.push(r.key);
+    const w = r.walk;
+    const who = walkWho(w).title;
+    const f = forecastFor(w.datetime);
+    const rain = f.rainy ? ` · 비 예보 ${f.rainProb}%` : '';
+    notify(r.kind === 'day'
+      ? `내일 ${fmtDate(w.datetime).replace(/^.*\) /, '')} ${who}님과 산책 약속이 있어요${rain}`
+      : `1시간 뒤 ${course(w.courseId).name}에서 산책이에요. 출발할 때 안심 산책을 켜 주세요`, { kind: 'reminder', to: { name: 'walks' } });
+  });
+  if (due.length) save();
+});
 
 onWalkEnded((w) => {
   setTimeout(() => {

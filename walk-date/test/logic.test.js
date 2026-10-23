@@ -6,6 +6,7 @@ import {
   toMeters, offsetLatLng, pathLengthKm, courseStats, hazardSegments,
   positionAlongPath, sessionStatus, normalizePhone,
   healthFlags, isVerified, validRegistryNo,
+  forecastFor, respondToProposal, reminderTimes, dueReminders,
 } from '../js/logic.js';
 import { PEOPLE, COURSES, DEFAULT_ME } from '../js/data.js';
 
@@ -196,4 +197,36 @@ test('validRegistryNo / healthFlags', () => {
   const flags = healthFlags({ health: { vaccinated: true, neutered: false, bite: true, allergies: '' } });
   assert.equal(flags.find((f) => f.key === 'bite').ok, false);
   assert.equal(flags.find((f) => f.key === 'vaccine').ok, true);
+});
+
+test('forecastFor: 같은 날짜는 항상 같은 예보, 7일 안에 비 오는 날이 있다', () => {
+  const d = new Date('2026-10-25T18:00:00');
+  assert.deepEqual(forecastFor(d), forecastFor(new Date('2026-10-25T07:00:00')));
+  const week = Array.from({ length: 7 }, (_, i) => forecastFor(new Date(2026, 9, 24 + i)));
+  assert.ok(week.some((f) => f.rainy) && week.some((f) => !f.rainy));
+  week.forEach((f) => assert.ok(f.rainProb >= 0 && f.rainProb <= 100));
+});
+
+test('respondToProposal: 비 예보·안 맞는 시간대·주의 코스면 다른 제안, 아니면 수락', () => {
+  const p = PEOPLE.find((x) => x.id === 'p8'); // 저녁·점심 선호
+  const rainy = [...Array(7)].map((_, i) => new Date(2026, 9, 24 + i)).find((d) => forecastFor(d).rainy);
+  const dry = [...Array(7)].map((_, i) => new Date(2026, 9, 24 + i)).find((d) => !forecastFor(d).rainy);
+  const r1 = respondToProposal(p, { slot: '저녁', date: rainy, courseLevel: '안심' });
+  assert.equal(r1.action, 'counter');
+  assert.ok(r1.dayShift >= 1 && !forecastFor(new Date(rainy.getTime() + r1.dayShift * 86400000)).rainy);
+  const r2 = respondToProposal(p, { slot: '밤', date: dry, courseLevel: '안심' });
+  assert.deepEqual([r2.action, r2.slot, r2.dayShift], ['counter', '저녁', 0]);
+  assert.equal(respondToProposal(p, { slot: '저녁', date: dry, courseLevel: '주의' }).saferCourse, true);
+  assert.equal(respondToProposal(p, { slot: '점심', date: dry, courseLevel: '보통' }).action, 'accept');
+});
+
+test('dueReminders: 확정된 약속의 전날·1시간 전 알림을 한 번씩만', () => {
+  const start = new Date('2026-10-25T18:00:00').getTime();
+  const w = { id: 'w1', status: 'confirmed', datetime: new Date(start).toISOString() };
+  assert.equal(reminderTimes(w)[0].at, start - 24 * 3600000);
+  assert.equal(dueReminders([w], [], start - 25 * 3600000).length, 0);
+  assert.deepEqual(dueReminders([w], [], start - 23 * 3600000).map((r) => r.kind), ['day']);
+  assert.deepEqual(dueReminders([w], ['w1:day'], start - 30 * 60000).map((r) => r.kind), ['hour']);
+  assert.equal(dueReminders([w], [], start + 60000).length, 0); // 약속 시간이 지나면 보내지 않음
+  assert.equal(dueReminders([{ ...w, status: 'pending' }], [], start - 30 * 60000).length, 0);
 });

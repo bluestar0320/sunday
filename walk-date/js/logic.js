@@ -276,3 +276,53 @@ export function healthFlags(dog) {
     { key: 'allergy', ok: null, label: h.allergies ? `알러지: ${h.allergies}` : '알러지 없음' },
   ];
 }
+
+// ---------- 일정 조율 ----------
+const dayOfYear = (d) => Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(d.getFullYear(), 0, 0)) / 86400000);
+
+// 데모용 날씨 예보: 날짜마다 항상 같은 값 (나흘에 한 번 비). 실서비스에서는 기상청 단기예보 API
+export function forecastFor(date) {
+  const doy = dayOfYear(new Date(date));
+  const rainyDay = doy % 4 === 2;
+  const rainProb = rainyDay ? 60 + ((doy * 7) % 31) : (doy * 13) % 35;
+  return {
+    rainProb,
+    rainy: rainProb >= 60,
+    sky: rainProb >= 60 ? '비' : rainProb >= 25 ? '흐림' : '맑음',
+    tempC: 8 + ((doy * 5) % 10),
+  };
+}
+
+// 상대방(데모)의 답: 비 예보 → 다른 날, 선호하지 않는 시간대 → 선호 시간, 주의 코스 → 더 안전한 코스
+export function respondToProposal(p, { slot, date, courseLevel }) {
+  const f = forecastFor(date);
+  if (f.rainy) {
+    let shift = 1;
+    while (shift < 7 && forecastFor(new Date(new Date(date).getTime() + shift * 86400000)).rainy) shift++;
+    return { action: 'counter', dayShift: shift, slot: p.walkTimes.includes(slot) ? slot : p.walkTimes[0], reason: `그날 비 예보(${f.rainProb}%)가 있어서` };
+  }
+  if (!p.walkTimes.includes(slot)) {
+    return { action: 'counter', dayShift: 0, slot: p.walkTimes[0], reason: `${slot}에는 시간이 안 돼서` };
+  }
+  if (courseLevel === '주의') {
+    return { action: 'counter', dayShift: 0, slot, saferCourse: true, reason: '그 길은 그 시간에 좀 어두워서' };
+  }
+  return { action: 'accept' };
+}
+
+// 산책 전날·1시간 전 알림
+export function reminderTimes(walk) {
+  const t = new Date(walk.datetime).getTime();
+  return [
+    { key: `${walk.id}:day`, at: t - 24 * 3600000, kind: 'day' },
+    { key: `${walk.id}:hour`, at: t - 3600000, kind: 'hour' },
+  ];
+}
+
+export function dueReminders(walks, fired, now) {
+  const done = new Set(fired);
+  return walks
+    .filter((w) => w.status === 'confirmed' && !w.completedAt && now < new Date(w.datetime).getTime())
+    .flatMap((w) => reminderTimes(w).map((r) => ({ ...r, walk: w })))
+    .filter((r) => r.at <= now && !done.has(r.key));
+}
