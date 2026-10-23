@@ -8,7 +8,7 @@ import {
   healthFlags, isVerified, validRegistryNo,
   forecastFor, respondToProposal, reminderTimes, dueReminders,
   receivedLikes, dueLikeBacks, groupFit, recordFromWalk, recordStats,
-  mannerSummary, mannerFromReviews, isLateCancel, relativeDay,
+  mannerSummary, mannerFromReviews, isLateCancel, relativeDay, detectSensitive,
 } from '../js/logic.js';
 import { PEOPLE, COURSES, DEFAULT_ME, GROUPS } from '../js/data.js';
 
@@ -315,4 +315,16 @@ test('mannerFromReviews / isLateCancel', () => {
   assert.equal(isLateCancel(at(2), now), true);
   assert.equal(isLateCancel(at(5), now), false);
   assert.equal(isLateCancel({ ...at(1), status: 'pending' }, now), false);
+});
+
+test('detectSensitive: 연락처·SNS·링크·금전 요청', () => {
+  assert.deepEqual(detectSensitive('제 번호 010-1234-5678이에요').kinds, ['contact']);
+  assert.ok(detectSensitive('01012345678로 문자 주세요').contact);
+  assert.ok(detectSensitive('편하게 카톡으로 얘기해요').contact);
+  assert.ok(detectSensitive('인스타 @choco_dog 팔로우 해주세요').contact);
+  assert.ok(detectSensitive('여기 보세요 https://example.com').link);
+  assert.ok(detectSensitive('급해서 그런데 20만원만 송금해줄 수 있어요?').money);
+  assert.ok(detectSensitive('돈 좀 빌려줄 수 있어요?').money);
+  assert.deepEqual(detectSensitive('내일 저녁 6시에 망원한강에서 봬요 😊').kinds, []);
+  assert.deepEqual(detectSensitive('간식 챙겨갈게요! 알러지 있어요?').kinds, []);
 });

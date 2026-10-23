@@ -1,11 +1,11 @@
-import { PEOPLE, COURSES, DEFAULT_ME, INTERESTS, AUTO_REPLIES } from './data.js';
+import { PEOPLE, COURSES, DEFAULT_ME, INTERESTS, AUTO_REPLIES, PHOTO_REPLIES } from './data.js';
 import {
   SIZES, ENERGY, TIME_SLOTS,
   rankCandidates, compatibility, recommendCourses, courseSafety, isMutualMatch,
   walkStatus, ageFromBirthYear, midpoint, hazardSegments,
   healthFlags, isVerified, validRegistryNo, normalizePhone,
   forecastFor, respondToProposal, reminderTimes, dueReminders, dueLikeBacks, recordStats,
-  mannerSummary, mannerFromReviews, isLateCancel, relativeDay,
+  mannerSummary, mannerFromReviews, isLateCancel, relativeDay, detectSensitive,
 } from './logic.js';
 import { icon, dogArt, resizeImage, SAFETY_ICON, walkScene } from './ui.js';
 import { mountMap } from './map.js';
@@ -481,7 +481,7 @@ function renderMatches() {
       ${active.map((m) => {
         const p = person(m.personId);
         const last = m.messages[m.messages.length - 1];
-        const lastText = last.kind === 'walk' ? '산책을 제안했어요' : last.text;
+        const lastText = last.kind === 'walk' ? '산책을 제안했어요' : last.kind === 'photo' ? '사진을 보냈어요' : last.text;
         return `<button class="list-item" data-open="${p.id}">
           <div class="avatar lg">${media(p)}</div>
           <div class="grow"><div class="name">${esc(p.name)} <span>· ${esc(p.dog.name)}</span></div>
@@ -551,6 +551,7 @@ function renderChat() {
       <div class="plan-bar">${plan}</div>
       <div class="messages" id="msgs">${m.messages.map(msgHtml).join('')}</div>
       <form class="composer" id="composer">
+        <button type="button" class="attach" id="attach" aria-label="사진 보내기">${icon('image', 20)}</button>
         <input id="msgInput" placeholder="메시지 보내기" autocomplete="off" maxlength="300" />
         <button type="submit" aria-label="전송">${icon('send', 18)}</button>
       </form>
@@ -561,13 +562,29 @@ function renderChat() {
     e.preventDefault();
     const text = $('#msgInput').value.trim();
     if (!text) return;
-    pushMsg(p.id, { from: 'me', text });
-    $('#msgInput').value = '';
-    fakeReply(p);
+    const send = () => {
+      pushMsg(p.id, { from: 'me', text, read: false });
+      $('#msgInput').value = '';
+      fakeReply(p);
+    };
+    // 첫 산책 전에 연락처·SNS를 보내려 하면 한 번 더 확인
+    if (detectSensitive(text).contact && !recordsWith(p.id).length) confirmContactShare(send);
+    else send();
+  };
+  $('#attach').onclick = async () => {
+    const [file] = await pickFiles();
+    if (!file || !file.type.startsWith('image/')) return;
+    try {
+      const src = await resizeImage(file, 600, 0.75);
+      pushMsg(p.id, { from: 'me', kind: 'photo', src, text: '사진', read: false });
+      fakeReply(p, PHOTO_REPLIES[Math.floor(Math.random() * PHOTO_REPLIES.length)].replace('{dog}', p.dog.name));
+    } catch { toast('사진을 보내지 못했어요'); }
   };
   $('#planBtn').onclick = () => (w ? go('walks') : openProposal(p, { courseId: lastRec?.courseId }));
   $('#msgs').onclick = (e) => {
     if (handleWalkAction(e)) return;
+    const rep = e.target.closest('[data-report]');
+    if (rep) { openReport(p, rep.dataset.report); return; }
     const card = e.target.closest('[data-map]');
     const walk = card && state.walks.find((x) => x.id === card.dataset.map);
     if (walk) openCourseMap(walk.courseId, walk.slot, p.id);
@@ -606,7 +623,29 @@ function msgHtml(msg) {
       </div>` : `<div class="wc-foot">${icon('route', 16)}코스 지도 보기</div>`}
     </div>`;
   }
-  return `<div class="msg ${msg.from === 'me' ? 'me' : 'them'}">${esc(msg.text)}</div>`;
+  const mine = msg.from === 'me';
+  const body = msg.kind === 'photo'
+    ? `<div class="msg ${mine ? 'me' : 'them'} photo-msg"><img src="${msg.src}" alt="보낸 사진" /></div>`
+    : `<div class="msg ${mine ? 'me' : 'them'}">${esc(msg.text)}</div>`;
+  if (mine) return `<div class="msg-row me">${msg.read === false ? '<span class="unread-1" aria-label="안 읽음">1</span>' : ''}${body}</div>`;
+  const flag = detectSensitive(msg.text);
+  const warn = flag.money
+    ? '금전 요청은 사기일 수 있어요. 절대 송금하지 마세요.'
+    : flag.contact || flag.link ? '외부 연락처·링크를 요청하고 있어요. 첫 만남 전에는 앱 안에서 대화하는 게 안전해요.' : '';
+  return body + (warn ? `<div class="msg-warn">${icon('alert', 14)}<span>${warn}</span><button data-report="${flag.money ? '금전 요청' : '연락처·만남 강요'}">신고</button></div>` : '');
+}
+
+function confirmContactShare(send) {
+  openModal(`
+    <h3>연락처는 만나본 뒤에 나눠요</h3>
+    <p class="desc">아직 첫 산책 전이에요. 전화번호나 SNS는 직접 만나서 서로 편해진 뒤에 나누는 걸 추천해요. 앱 안에서 대화하면 불편할 때 바로 신고·차단할 수 있어요.</p>
+    <div class="stack">
+      <button class="btn accent" id="ccEdit">메시지 고칠게요</button>
+      <button class="btn text" id="ccSend">그래도 보내기</button>
+    </div>`, (root) => {
+    $('#ccEdit', root).onclick = () => { closeModal(); $('#msgInput')?.focus(); };
+    $('#ccSend', root).onclick = () => { closeModal(); send(); };
+  });
 }
 
 function pushMsg(personId, msg) {
@@ -623,12 +662,22 @@ function pushMsg(personId, msg) {
   }
 }
 
+// 상대가 읽으면 내 메시지의 '1'이 사라진다
+function markRead(personId) {
+  const m = matchOf(personId);
+  if (!m) return;
+  m.messages.forEach((x) => { if (x.from === 'me' && x.read === false) x.read = true; });
+  save();
+  if (route.name === 'chat' && route.id === personId) document.querySelectorAll('#msgs .unread-1').forEach((el) => el.remove());
+}
+
 function scrollChat() { const el = $('#msgs'); if (el) el.scrollTop = el.scrollHeight; }
 
 function fakeReply(p, text) {
   const reply = text || AUTO_REPLIES[Math.floor(Math.random() * AUTO_REPLIES.length)]
     .replace('{dog}', p.dog.name).replace('{myDog}', state.me.dog.name || '아이');
   setTimeout(() => {
+    markRead(p.id);
     if (route.name === 'chat' && route.id === p.id) {
       $('#msgs').insertAdjacentHTML('beforeend', '<div class="typing" id="typing"><i></i><i></i><i></i></div>');
       scrollChat();
@@ -859,6 +908,41 @@ export function openCourseMap(courseId, slot, personId) {
   draw();
 }
 
+const REPORT_REASONS = ['부적절한 메시지 · 사진', '연락처·만남 강요', '금전 요청', '사칭 · 허위 프로필', '노쇼 · 약속 불이행', '기타'];
+
+function openReport(p, preset = '') {
+  openModal(`
+    <h3>${esc(p.name)}님 신고하기</h3>
+    <p class="desc">신고 내용은 상대에게 알려지지 않아요. 운영팀이 24시간 안에 확인할게요.</p>
+    <div class="field"><label>신고 사유</label><div class="chips" data-seg="reason">${REPORT_REASONS.map((r) => `<button type="button" class="tag ${r === preset ? 'on' : ''}" data-v="${esc(r)}">${esc(r)}</button>`).join('')}</div></div>
+    <div class="field"><label for="rp-detail">자세한 내용 (선택)</label><textarea class="input" id="rp-detail" maxlength="300" placeholder="어떤 일이 있었는지 알려주세요"></textarea></div>
+    <div class="stack" style="margin-bottom:18px">
+      <label class="switch-row" style="background:var(--bg-soft)">${icon('chat', 22)}<div class="grow"><div class="t">최근 대화 첨부</div><div class="d">최근 메시지 20개를 함께 보내 빠르게 확인할 수 있어요</div></div>${switchHtml('rpAttach', true)}</label>
+      <label class="switch-row" style="background:var(--danger-soft)">${icon('ban', 22)}<div class="grow"><div class="t">신고하고 차단하기</div><div class="d">대화와 일정이 숨겨지고 다시 추천되지 않아요</div></div>${switchHtml('rpBlock', true)}</label>
+    </div>
+    <div class="sheet-foot"><button class="btn danger" id="rpSend">${icon('flag', 18)}신고하기</button></div>`, (root) => {
+    bindToggles(root);
+    $('#rpSend', root).onclick = () => {
+      const reason = segVal('reason', root);
+      if (!reason) { toast('신고 사유를 골라주세요'); return; }
+      const attach = $('#rpAttach', root).checked;
+      state.reports.push({
+        personId: p.id, reason, detail: $('#rp-detail', root).value.trim(), at: Date.now(),
+        messages: attach ? (matchOf(p.id)?.messages || []).slice(-20).map((x) => ({ from: x.from, text: x.kind === 'photo' ? '[사진]' : x.text, at: x.at })) : [],
+      });
+      const block = $('#rpBlock', root).checked;
+      if (block) {
+        state.blocked.push(p.id);
+        state.walks.forEach((w) => { if (w.personId === p.id && !['cancelled', 'declined', 'replaced'].includes(w.status)) w.status = 'cancelled'; });
+      }
+      save();
+      closeModal();
+      notify(`신고가 접수됐어요${block ? ' · 차단했어요' : ''}. 24시간 안에 확인할게요`, { kind: 'safety', device: false });
+      if (block) go('matches');
+    };
+  });
+}
+
 function openSafetyMenu(p) {
   openModal(`
     <h3>${esc(p.name)}님</h3>
@@ -874,7 +958,7 @@ function openSafetyMenu(p) {
       try { await navigator.clipboard.writeText(text); toast('약속 정보를 복사했어요'); } catch { toast(text); }
       closeModal();
     };
-    $('#report', root).onclick = () => { closeModal(); toast('신고가 접수됐어요. 24시간 내 검토할게요.'); };
+    $('#report', root).onclick = () => openReport(p);
     $('#block', root).onclick = () => {
       if (!confirm(`${p.name}님을 차단할까요? 대화와 일정이 숨겨져요.`)) return;
       state.blocked.push(p.id);

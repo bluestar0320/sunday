@@ -752,3 +752,16 @@ button.tag.rainy .ic { color: #4F7EA3; }
 .vbadge.good { background: var(--safe-soft); color: var(--safe); }
 .vbadge.bad { background: var(--danger-soft); color: var(--danger); }
 .menu-item.received .ic { color: #F2B544; }
+
+/* 채팅 보완 */
+.composer .attach { width: 44px; height: 44px; border-radius: 50%; background: var(--surface); color: var(--accent); box-shadow: var(--shadow-sm); display: grid; place-items: center; flex-shrink: 0; }
+.msg-row.me { display: flex; justify-content: flex-end; align-items: flex-end; gap: 6px; }
+.msg-row.me .msg { max-width: 76%; }
+.unread-1 { font-size: 11px; font-weight: 800; color: var(--heart); margin-bottom: 2px; }
+.photo-msg { padding: 4px !important; background: var(--surface) !important; box-shadow: var(--shadow-sm); }
+.photo-msg img { display: block; width: 180px; max-width: 100%; border-radius: 18px; }
+.msg-warn { align-self: flex-start; max-width: 86%; display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 16px; background: var(--warn-soft); color: var(--warn); font-size: 12px; line-height: 1.5; margin: -2px 0 4px; }
+.msg-warn span { color: var(--text-2); }
+.msg-warn .ic { margin-top: 2px; }
+.msg-warn button { margin-left: auto; color: var(--danger); font-weight: 700; white-space: nowrap; text-decoration: underline; text-underline-offset: 2px; }
+.composer input { min-width: 0; }

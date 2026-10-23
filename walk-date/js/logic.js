@@ -422,3 +422,18 @@ export function mannerFromReviews(reviews, penalties = {}) {
 // 확정된 약속을 시작 3시간 이내에 취소하면 늦은 취소
 export const isLateCancel = (walk, now = Date.now()) => walk.status === 'confirmed'
   && new Date(walk.datetime).getTime() - now < 3 * 3600000;
+
+// ---------- 채팅 안전 ----------
+// 첫 산책 전 연락처·SNS 교환, 외부 링크, 금전 요청을 찾아낸다
+const CONTACT_RE = /(01[016789][-.\s]?\d{3,4}[-.\s]?\d{4})|(카톡|카카오톡|오픈채팅|kakao|인스타|insta|라인\s?아이디|텔레그램|telegram)|(@[a-z0-9_.]{3,})/i;
+const LINK_RE = /(https?:\/\/|www\.)\S+/i;
+const MONEY_RE = /(송금|계좌|입금|이체|빌려\s?(줘|주|줄)|돈\s?(좀|을|이)?\s?(보내|빌려)|투자|코인|상품권|기프티콘\s?보내|현금)/;
+
+export function detectSensitive(text) {
+  const t = String(text || '');
+  const kinds = [];
+  if (CONTACT_RE.test(t)) kinds.push('contact');
+  if (LINK_RE.test(t)) kinds.push('link');
+  if (MONEY_RE.test(t)) kinds.push('money');
+  return { kinds, contact: kinds.includes('contact'), link: kinds.includes('link'), money: kinds.includes('money') };
+}
