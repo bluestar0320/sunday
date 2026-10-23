@@ -17,6 +17,12 @@
   --overlay: rgba(20, 20, 20, .45);
   --shadow-lg: 0 12px 32px rgba(20, 20, 20, .12);
   --shadow-sm: 0 1px 3px rgba(20, 20, 20, .08);
+  --map-land: #F3F1EC;
+  --map-park: #DCEBD2;
+  --map-water: #BFDCEF;
+  --map-road: #FFFFFF;
+  --map-road-casing: #DEDAD3;
+  --map-label: #6E6A65;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -37,6 +43,12 @@
     --danger-soft: #331A1B;
     --overlay: rgba(0, 0, 0, .6);
     --shadow-lg: 0 12px 32px rgba(0, 0, 0, .5);
+    --map-land: #1E1E1E;
+    --map-park: #1F2E22;
+    --map-water: #17293A;
+    --map-road: #3A3936;
+    --map-road-casing: #2A2927;
+    --map-label: #A19C96;
   }
 }
 
@@ -414,3 +426,83 @@ input[type=range] { width: 100%; accent-color: var(--text); }
 .stats div + div { border-left: 1px solid var(--line); }
 .stats b { display: block; font-size: 20px; }
 .stats span { font-size: 12px; color: var(--text-2); }
+
+/* 코스 지도 */
+.map { position: relative; overflow: hidden; background: var(--map-land); touch-action: none; user-select: none; }
+.map-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.m-land { fill: var(--map-land); }
+.m-park { fill: var(--map-park); }
+.m-water { fill: var(--map-water); }
+.m-road { fill: none; stroke: var(--map-road); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.m-road.major { stroke-width: 7; }
+.m-route-casing { fill: none; stroke: #fff; stroke-width: 10; stroke-linecap: round; stroke-linejoin: round; }
+.m-route { fill: none; stroke: var(--accent); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+.m-haz { fill: none; stroke: var(--danger); stroke-width: 6; stroke-linecap: round; stroke-dasharray: 2 9; }
+.m-haz.off { stroke: #9A9692; stroke-width: 3; stroke-dasharray: 1 7; }
+@media (prefers-color-scheme: dark) { .m-route-casing { stroke: #121212; } }
+
+.map-layer { position: absolute; inset: 0; pointer-events: none; }
+.mk { position: absolute; left: 0; top: 0; will-change: transform; }
+.mk > * { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; }
+.mk-label span { font-size: 11px; font-weight: 600; color: var(--map-label); text-shadow: 0 0 3px var(--map-land), 0 0 3px var(--map-land); }
+.mk-label.water span { color: #4F86AD; font-size: 13px; letter-spacing: 4px; font-weight: 500; }
+.mk-label.station span { color: var(--text-2); }
+.mk-label.station span::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; border: 2px solid #3E8E41; background: #fff; margin-right: 3px; vertical-align: -1px; }
+.mk-label.area span { font-size: 12px; }
+.map.zoomed-out .mk-label.station span { font-size: 10px; }
+.mk-poi span {
+  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  color: #fff; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.25);
+}
+.mk-poi.cctv span { background: #3B6FD8; width: 20px; height: 20px; }
+.mk-poi.store span { background: #13854F; }
+.mk-poi.police span { background: #1F3A68; }
+.mk-haz { z-index: 2; }
+.mk-haz span {
+  transform: translate(-50%, -50%) translate(16px, -18px);
+  width: 22px; height: 22px; border-radius: 50%; background: var(--danger); color: #fff;
+  font-size: 12px; font-weight: 800; display: grid; place-items: center; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.3);
+}
+.mk-haz.off span { background: #9A9692; }
+.mk-start { z-index: 1; }
+.mk-start span, .mk-mid span {
+  width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+  background: #141414; color: #fff; border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+.mk-mid span { background: #7C5CDB; width: 26px; height: 26px; }
+.mk em {
+  font-style: normal; font-size: 11px; font-weight: 700; top: 22px; color: var(--text);
+  background: var(--bg); padding: 2px 6px; border-radius: 6px; box-shadow: var(--shadow-sm);
+}
+.map-ctrl { position: absolute; right: 12px; bottom: 12px; display: grid; gap: 1px; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-lg); z-index: 2; }
+.map-ctrl button { width: 40px; height: 40px; display: grid; place-items: center; background: var(--bg); color: var(--text); }
+
+.mini-map { height: 170px; border-radius: 12px; margin-top: 14px; }
+.map-open { width: 100%; margin-top: 8px; }
+.course { cursor: pointer; }
+
+.mapview { position: absolute; inset: 0; z-index: 25; background: var(--bg); display: flex; flex-direction: column; animation: fade .18s; }
+.mapview .topbar h1 { font-size: 18px; }
+.mv-map { height: 46%; flex-shrink: 0; }
+.mv-sheet { flex: 1; overflow-y: auto; padding: 16px 20px 28px; border-radius: 20px 20px 0 0; margin-top: -16px; background: var(--bg); position: relative; z-index: 3; box-shadow: 0 -4px 16px rgba(0,0,0,.06); }
+.mv-stats { display: grid; grid-template-columns: repeat(3, 1fr); margin: 16px 0 12px; }
+.mv-stats div { text-align: center; }
+.mv-stats div + div { border-left: 1px solid var(--line); }
+.mv-stats b { display: block; font-size: 17px; }
+.mv-stats span { font-size: 12px; color: var(--text-2); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--text-2); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { display: inline-grid; place-items: center; }
+.lg-route { width: 18px; height: 5px; border-radius: 3px; background: var(--accent); }
+.lg-haz { width: 18px; height: 5px; background: repeating-linear-gradient(90deg, var(--danger) 0 3px, transparent 3px 6px); }
+.lg-poi { width: 16px; height: 16px; border-radius: 50%; color: #fff; }
+.lg-poi.cctv { background: #3B6FD8; } .lg-poi.store { background: #13854F; } .lg-poi.police { background: #1F3A68; } .lg-poi.mid { background: #7C5CDB; }
+.hz-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.hz-list li { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; background: var(--danger-soft); }
+.hz-list li.off { background: var(--bg-soft); }
+.hz-list .no { width: 22px; height: 22px; border-radius: 50%; background: var(--danger); color: #fff; font-size: 12px; font-weight: 800; display: grid; place-items: center; flex-shrink: 0; }
+.hz-list li.off .no { background: #9A9692; }
+.hz-list b { display: block; font-size: 14px; }
+.hz-list span { font-size: 13px; color: var(--text-2); }
+.walk-card { cursor: pointer; }
+.walk-card .wc-foot { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-top: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--accent); }

@@ -1,50 +1,158 @@
 // 데모용 샘플 데이터 (마포구 일대)
 
-// 산책 코스 + 안전 정보
+import { courseStats, offsetLatLng, distanceKm } from './logic.js';
+
+// ---------- 지도 기본 지형 (간략화한 마포구 일대) ----------
+// 한강 북쪽 강변선 (서→동)
+const BANK = [
+  [37.5790, 126.8600], [37.5730, 126.8700], [37.5670, 126.8790], [37.5600, 126.8870],
+  [37.5535, 126.8950], [37.5485, 126.9030], [37.5437, 126.9110], [37.5395, 126.9210], [37.5355, 126.9330],
+];
+
+// 강변선 위 위도 (경도로 보간)
+export function bankLat(lng) {
+  for (let i = 1; i < BANK.length; i++) {
+    const [la1, ln1] = BANK[i - 1];
+    const [la2, ln2] = BANK[i];
+    if (lng <= ln2) return la1 + ((la2 - la1) * (lng - ln1)) / (ln2 - ln1);
+  }
+  return BANK[BANK.length - 1][0];
+}
+
+const ellipse = (lat, lng, rLat, rLng, n = 18) =>
+  Array.from({ length: n + 1 }, (_, i) => {
+    const t = (i / n) * Math.PI * 2;
+    return [lat + rLat * Math.sin(t), lng + rLng * Math.cos(t)];
+  });
+
+const shift = (pts, dLat) => pts.map(([la, ln]) => [la + dLat, ln]);
+
+export const MAP = {
+  water: [
+    [...BANK, ...shift(BANK, -0.0085).reverse()],
+    ellipse(37.5640, 126.8960, 0.0010, 0.0022), // 평화의공원 호수
+  ],
+  parks: [
+    [...shift(BANK, 0.0016), ...BANK.slice().reverse()], // 한강공원 둔치
+    [[37.5722, 126.8775], [37.5738, 126.8885], [37.5682, 126.8992], [37.5618, 126.8992], [37.5612, 126.8918], [37.5660, 126.8815]], // 월드컵공원
+    ellipse(37.5660, 126.9110, 0.0028, 0.0038), // 성미산
+  ],
+  roads: [
+    { name: '강변북로', pts: shift(BANK, 0.0020), major: true },
+    { name: '월드컵로', pts: [[37.5495, 126.9135], [37.5560, 126.9030], [37.5610, 126.9000], [37.5700, 126.8998]], major: true },
+    { name: '양화로', pts: [[37.5495, 126.9135], [37.5535, 126.9190], [37.5572, 126.9245]], major: true },
+    { name: '', pts: [[37.5560, 126.9030], [37.5575, 126.9110], [37.5600, 126.9200], [37.5605, 126.9300]] },
+    { name: '', pts: [[37.5520, 126.9050], [37.5560, 126.9100], [37.5600, 126.9150], [37.5700, 126.9160]] },
+    { name: '', pts: [[37.5480, 126.9060], [37.5520, 126.9120], [37.5535, 126.9190]] },
+  ],
+  labels: [
+    { text: '한강', lat: 37.5450, lng: 126.8930, kind: 'water' },
+    { text: '망원동', lat: 37.5605, lng: 126.9040, kind: 'area' },
+    { text: '연남동', lat: 37.5640, lng: 126.9210, kind: 'area' },
+    { text: '서교동', lat: 37.5515, lng: 126.9215, kind: 'area' },
+    { text: '상암동', lat: 37.5760, lng: 126.8920, kind: 'area' },
+    { text: '합정역', lat: 37.5495, lng: 126.9135, kind: 'station' },
+    { text: '망원역', lat: 37.5560, lng: 126.9100, kind: 'station' },
+    { text: '홍대입구역', lat: 37.5572, lng: 126.9245, kind: 'station' },
+    { text: '월드컵경기장역', lat: 37.5695, lng: 126.8990, kind: 'station' },
+  ],
+};
+
+// ---------- 산책 코스 ----------
+// path: [{ lat, lng, h? }] — h가 같은 연속 구간이 hazards[h] 주의 구간
 // crowd: 시간대별 유동인구 (0 드묾, 1 보통, 2 많음) / lighting: 야간 조명 (0 어두움, 1 보통, 2 밝음)
-// storeM / policeM: 가장 가까운 편의점 / 지구대(안심지킴이집) 거리(m)
-export const COURSES = [
+// storeM / policeM: 출발점에서 가장 가까운 편의점 / 지구대(안심지킴이집) 거리(m)
+
+// 강변을 따라 갔다가 조금 안쪽 길로 돌아오는 순환 경로
+function riverLoop(lng1, lng2, near, far, n = 8) {
+  const out = Array.from({ length: n + 1 }, (_, i) => { const ln = lng1 + ((lng2 - lng1) * i) / n; return [bankLat(ln) + near, ln]; });
+  const back = out.map(([, ln]) => [bankLat(ln) + far, ln]).reverse();
+  return [...out, ...back, out[0]];
+}
+
+const RAW_COURSES = [
   {
-    id: 'c1', name: '망원한강공원 잔디길', type: '한강공원', lat: 37.5550, lng: 126.8950, lengthKm: 2.4, minutes: 40,
-    note: '넓은 잔디, 반려견 놀이터 인근',
+    id: 'c1', name: '망원한강공원 잔디길', type: '한강공원', note: '넓은 잔디, 반려견 놀이터 인근',
+    // 망원 나들목(강변북로 아래 지하 통로)으로 진입
+    path: [[bankLat(126.8985) + 0.0030, 126.8985, 0], [bankLat(126.8985) + 0.0018, 126.8985, 0], [bankLat(126.8985) + 0.0011, 126.8985, 0],
+      ...riverLoop(126.8985, 126.8880, 0.0004, 0.0010).slice(1, -1), [bankLat(126.8985) + 0.0011, 126.8985, 0], [bankLat(126.8985) + 0.0018, 126.8985, 0], [bankLat(126.8985) + 0.0030, 126.8985, 0]],
+    hazards: [{ note: '망원 나들목 지하 통로', when: 'night' }],
     safety: { crowd: { '이른 아침': 1, '점심': 1, '저녁': 2, '밤': 1 }, lighting: 2, cctv: true, openView: true, storeM: 150, policeM: 600 },
   },
   {
-    id: 'c2', name: '경의선숲길 연남구간', type: '공원길', lat: 37.5605, lng: 126.9235, lengthKm: 1.8, minutes: 30,
-    note: '카페 많고 저녁에도 북적여요',
+    id: 'c2', name: '경의선숲길 연남구간', type: '공원길', note: '카페 많고 저녁에도 북적여요', roundTrip: true,
+    path: [[37.5574, 126.9230], [37.5598, 126.9238], [37.5622, 126.9247], [37.5646, 126.9257], [37.5668, 126.9266], [37.5688, 126.9274]],
+    hazards: [],
     safety: { crowd: { '이른 아침': 1, '점심': 2, '저녁': 2, '밤': 2 }, lighting: 2, cctv: true, openView: true, storeM: 50, policeM: 400 },
   },
   {
-    id: 'c3', name: '평화의공원 호수 둘레길', type: '공원', lat: 37.5640, lng: 126.8960, lengthKm: 2.1, minutes: 35,
-    note: '호수 둘레길, 주차 가능',
+    id: 'c3', name: '평화의공원 호수 둘레길', type: '공원', note: '호수 둘레길, 주차 가능',
+    path: ellipse(37.5640, 126.8960, 0.0016, 0.0031).map(([la, ln]) => [la, ln, la > 37.5648 ? 0 : undefined]),
+    hazards: [{ note: '호수 북쪽 산책로 (해 지면 인적 드묾)', when: 'night' }],
     safety: { crowd: { '이른 아침': 1, '점심': 2, '저녁': 1, '밤': 0 }, lighting: 1, cctv: true, openView: true, storeM: 400, policeM: 900 },
   },
   {
-    id: 'c4', name: '하늘공원 억새길', type: '공원', lat: 37.5680, lng: 126.8850, lengthKm: 3.2, minutes: 60,
-    note: '억새가 키보다 높고 계단이 많아요',
+    id: 'c4', name: '하늘공원 억새길', type: '공원', note: '억새가 키보다 높고 계단이 많아요',
+    path: ellipse(37.5688, 126.8850, 0.0030, 0.0055, 22).map(([la, ln]) => [la, ln, 0]),
+    hazards: [{ note: '억새밭 구간 (시야 가림 · 조명 없음)', when: 'always' }],
     safety: { crowd: { '이른 아침': 1, '점심': 1, '저녁': 0, '밤': 0 }, lighting: 0, cctv: false, openView: false, storeM: 1200, policeM: 1500 },
   },
   {
-    id: 'c5', name: '절두산 한강 산책로', type: '한강공원', lat: 37.5450, lng: 126.9100, lengthKm: 2.0, minutes: 35,
-    note: '노을 명소, 자전거 도로 인접',
+    id: 'c5', name: '절두산 한강 산책로', type: '한강공원', note: '노을 명소, 자전거 도로 인접',
+    path: riverLoop(126.9040, 126.9175, 0.0004, 0.0010, 10).map(([la, ln]) => [la, ln, ln > 126.9100 && ln < 126.9125 ? 0 : undefined]),
+    hazards: [{ note: '당산철교 아래 구간', when: 'night' }],
     safety: { crowd: { '이른 아침': 1, '점심': 1, '저녁': 1, '밤': 0 }, lighting: 1, cctv: true, openView: true, storeM: 350, policeM: 800 },
   },
   {
-    id: 'c6', name: '서교동 카페거리 루프', type: '도심', lat: 37.5530, lng: 126.9180, lengthKm: 1.5, minutes: 25,
-    note: '반려견 동반 카페, 산책 후 쉬기 좋아요',
+    id: 'c6', name: '서교동 카페거리 루프', type: '도심', note: '반려견 동반 카페, 산책 후 쉬기 좋아요',
+    path: [[37.5518, 126.9162], [37.5518, 126.9198], [37.5530, 126.9200], [37.5542, 126.9198], [37.5544, 126.9180], [37.5542, 126.9162], [37.5530, 126.9160], [37.5518, 126.9162]],
+    hazards: [],
     safety: { crowd: { '이른 아침': 0, '점심': 2, '저녁': 2, '밤': 2 }, lighting: 2, cctv: true, openView: true, storeM: 30, policeM: 300 },
   },
   {
-    id: 'c7', name: '망원동 주택가 골목길', type: '골목', lat: 37.5585, lng: 126.9050, lengthKm: 1.2, minutes: 20,
-    note: '조용한 주택가, 차량 통행 적음',
+    id: 'c7', name: '망원동 주택가 골목길', type: '골목', note: '조용한 주택가, 차량 통행 적음',
+    path: [[37.5570, 126.9030], [37.5576, 126.9041, 0], [37.5584, 126.9038, 0], [37.5591, 126.9050, 0], [37.5599, 126.9047, 0], [37.5603, 126.9062, 0],
+      [37.5595, 126.9071, 0], [37.5586, 126.9065, 0], [37.5578, 126.9069, 0], [37.5572, 126.9056, 0], [37.5570, 126.9030]],
+    hazards: [{ note: '가로등 · CCTV 없는 골목', when: 'always' }],
     safety: { crowd: { '이른 아침': 0, '점심': 1, '저녁': 1, '밤': 0 }, lighting: 0, cctv: false, openView: false, storeM: 200, policeM: 700 },
   },
   {
-    id: 'c8', name: '성미산 숲길', type: '숲길', lat: 37.5660, lng: 126.9110, lengthKm: 1.9, minutes: 40,
-    note: '숲 그늘 오르막, 흙길',
+    id: 'c8', name: '성미산 숲길', type: '숲길', note: '숲 그늘 오르막, 흙길',
+    // 남쪽 입구에서 시작해 산을 한 바퀴 도는 순환로
+    path: (() => { const e = ellipse(37.5658, 126.9110, 0.0020, 0.0028, 16).slice(0, -1); const loop = [...e.slice(12), ...e.slice(0, 12)]; return [...loop, loop[0]].map(([la, ln], i, a) => [la, ln, i === 0 || i === a.length - 1 ? undefined : 0]); })(),
+    hazards: [{ note: '숲길 오르막 (시야 가림 · 조명 없음)', when: 'always' }],
     safety: { crowd: { '이른 아침': 1, '점심': 1, '저녁': 0, '밤': 0 }, lighting: 0, cctv: false, openView: false, storeM: 600, policeM: 1100 },
   },
 ];
+
+// 경로에서 거리·시간·중심점·안전 시설 위치를 계산
+function buildCourse(raw) {
+  const path = raw.path.map(([lat, lng, h]) => (h === undefined ? { lat, lng } : { lat, lng, h }));
+  const lats = path.map((p) => p.lat);
+  const lngs = path.map((p) => p.lng);
+  const c = {
+    ...raw,
+    path,
+    lat: (Math.min(...lats) + Math.max(...lats)) / 2,
+    lng: (Math.min(...lngs) + Math.max(...lngs)) / 2,
+  };
+  const start = path[0];
+  const pois = [
+    { type: 'store', label: '편의점', ...offsetLatLng(start, raw.safety.storeM, 35) },
+    { type: 'police', label: '지구대', ...offsetLatLng(start, raw.safety.policeM, 15) },
+  ];
+  if (raw.safety.cctv) {
+    // 경로를 따라 CCTV 3곳 (순환 경로에서 겹치는 위치는 하나만)
+    [0.15, 0.45, 0.7].forEach((f) => {
+      const p = path[Math.floor((path.length - 1) * f)];
+      const dup = pois.some((q) => q.type === 'cctv' && distanceKm(q, p) < 0.08);
+      if (!dup) pois.push({ type: 'cctv', label: 'CCTV', lat: p.lat, lng: p.lng });
+    });
+  }
+  return { ...c, pois, ...courseStats(c) };
+}
+
+export const COURSES = RAW_COURSES.map(buildCourse);
 
 export const PEOPLE = [
   {

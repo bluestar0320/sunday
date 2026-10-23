@@ -2,9 +2,10 @@ import { PEOPLE, COURSES, DEFAULT_ME, INTERESTS, AUTO_REPLIES } from './data.js'
 import {
   SIZES, ENERGY, TIME_SLOTS,
   rankCandidates, compatibility, recommendCourses, courseSafety, isMutualMatch,
-  averageRating, walkStatus, ageFromBirthYear,
+  averageRating, walkStatus, ageFromBirthYear, midpoint, hazardSegments,
 } from './logic.js';
 import { icon, dogArt, resizeImage, SAFETY_ICON } from './ui.js';
+import { mountMap } from './map.js';
 
 const STORAGE_KEY = 'walkdate:v2';
 const MAX_PHOTOS = 5;
@@ -545,6 +546,11 @@ function renderChat() {
     fakeReply(p);
   };
   $('#planBtn').onclick = () => (w ? go('walks') : openProposal(p));
+  $('#msgs').onclick = (e) => {
+    const card = e.target.closest('[data-map]');
+    const walk = card && state.walks.find((x) => x.id === card.dataset.map);
+    if (walk) openCourseMap(walk.courseId, walk.slot, p.id);
+  };
   $('#more').onclick = () => openSafetyMenu(p);
 }
 
@@ -555,12 +561,13 @@ function msgHtml(msg) {
     if (!w) return '';
     const c = course(w.courseId);
     const s = courseSafety(c, w.slot);
-    return `<div class="walk-card">
+    return `<div class="walk-card" role="button" tabindex="0" data-map="${w.id}">
       <div class="wc-head">${icon('route', 18)}<span class="grow">산책 제안</span>${safeBadge(s.level)}</div>
       <div class="wc-body">
         <div>${icon('clock', 16)}${fmtDate(w.datetime)}</div>
         <div>${icon('pin', 16)}${esc(c.name)} · 약 ${c.minutes}분</div>
       </div>
+      <div class="wc-foot">${icon('route', 16)}코스 지도 보기</div>
     </div>`;
   }
   return `<div class="msg ${msg.from === 'me' ? 'me' : 'them'}">${esc(msg.text)}</div>`;
@@ -599,15 +606,17 @@ const SLOT_HOUR = { '이른 아침': 7, '점심': 12, '저녁': 18, '밤': 21 };
 
 function courseHtml(c, selected) {
   const s = c.safety;
-  return `<button class="course ${selected ? 'on' : ''}" data-id="${c.id}">
+  return `<div class="course ${selected ? 'on' : ''}" data-id="${c.id}" role="button" tabindex="0" aria-pressed="${selected}">
     <div class="top"><span class="t">${esc(c.name)}</span>${safeBadge(s.level)}</div>
-    <div class="m">${c.type} · ${c.lengthKm}km · 약 ${c.minutes}분 · 중간 지점에서 ${c.distanceKm}km</div>
+    <div class="m">${c.type} · ${c.roundTrip ? '왕복 ' : ''}${c.lengthKm}km · 약 ${c.minutes}분 · 중간 지점에서 ${c.distanceKm}km</div>
     <div class="sig">${s.checks.map((k) => `<span class="${k.ok ? '' : 'bad'}" title="${esc(k.label)}">${icon(SAFETY_ICON[k.key], 16)}</span>`).join('')}</div>
-    ${selected ? `<ul class="checklist">
+    ${selected ? `<div class="mini-map" id="miniMap"></div>
+    <button type="button" class="btn sm outline map-open" data-open-map="${c.id}">${icon('route', 16)}지도 크게 보기</button>
+    <ul class="checklist">
       ${s.checks.map((k) => `<li class="${k.ok ? '' : 'bad'}">${icon(k.ok ? 'check' : 'alert', 16)}${esc(k.label)}</li>`).join('')}
       <li>${icon('pin', 16)}${esc(c.note)}</li>
     </ul>` : ''}
-  </button>`;
+  </div>`;
 }
 
 function openProposal(p) {
@@ -647,9 +656,13 @@ function openProposal(p) {
       $('#safeOnly', root).onchange = (e) => { ui.safeOnly = e.target.checked; draw(); };
       $('#showAll', root)?.addEventListener('click', () => { ui.safeOnly = false; draw(); });
       $('#courses', root).onclick = (e) => {
-        const b = e.target.closest('.course'); if (!b) return;
+        const open = e.target.closest('[data-open-map]');
+        if (open) { openCourseMap(open.dataset.openMap, ui.slot, p.id); return; }
+        const b = e.target.closest('.course'); if (!b || b.dataset.id === ui.courseId) return;
         ui.courseId = b.dataset.id; draw();
       };
+      const mini = $('#miniMap', root);
+      if (mini) mountMap(mini, { course: course(ui.courseId), slot: ui.slot, mid: midpoint(state.me, p), interactive: false });
       $('#send', root).onclick = () => sendProposal(p, ui, days);
     };
     draw();
@@ -679,6 +692,63 @@ function sendProposal(p, ui, days) {
     if (route.name === 'chat' && route.id === p.id) renderChat();
     if (route.name === 'walks') renderWalks();
   }, 2500);
+}
+
+// 코스 지도 전체 화면 (모달 위에 겹쳐 열림)
+function openCourseMap(courseId, slot, personId) {
+  const c = course(courseId);
+  const other = personId && person(personId);
+  const mid = other ? midpoint(state.me, other) : null;
+  let map = null;
+  const el = document.createElement('div');
+  el.className = 'mapview';
+  document.querySelector('.phone').appendChild(el);
+  const close = () => { map?.destroy(); el.remove(); };
+
+  const draw = () => {
+    const s = courseSafety(c, slot);
+    const hz = hazardSegments(c, slot);
+    const far = c.pois.filter((x) => x.type !== 'cctv' && (x.type === 'store' ? c.safety.storeM : c.safety.policeM) > 900);
+    el.innerHTML = `
+      <header class="topbar has-back">
+        <button class="icon-btn" id="mvClose" aria-label="닫기">${icon('back', 24)}</button>
+        <h1>${esc(c.name)}</h1>${safeBadge(s.level)}<span style="width:12px"></span>
+      </header>
+      <div class="mv-map" id="mvMap"></div>
+      <div class="mv-sheet">
+        ${segHtml('mvSlot', TIME_SLOTS, slot)}
+        <div class="mv-stats">
+          <div><b>${c.lengthKm}km</b><span>${c.roundTrip ? '왕복 거리' : '순환 거리'}</span></div>
+          <div><b>약 ${c.minutes}분</b><span>반려견 걸음 기준</span></div>
+          <div><b>${c.safety.storeM}m</b><span>가까운 편의점</span></div>
+        </div>
+        <div class="legend">
+          <span><i class="lg-route"></i>산책 경로</span>
+          <span><i class="lg-haz"></i>지금 주의 구간</span>
+          <span><i class="lg-poi cctv">${icon('cctv', 11)}</i>CCTV</span>
+          <span><i class="lg-poi store">${icon('store', 11)}</i>편의점</span>
+          <span><i class="lg-poi police">${icon('shield', 11)}</i>지구대</span>
+          ${mid ? `<span><i class="lg-poi mid">${icon('users', 11)}</i>중간 지점</span>` : ''}
+        </div>
+        <div class="label">${slot} 기준 주의 구간</div>
+        ${hz.length ? `<ul class="hz-list">${hz.map((h) => `<li class="${h.active ? '' : 'off'}">
+            <span class="no">${h.no}</span>
+            <div class="grow"><b>${esc(h.note)}</b><span>${h.active ? (h.when === 'always' ? '시간대와 관계없이 주의하세요' : `${slot}에는 어둡고 한산해요`) : '낮에는 괜찮아요 · 저녁·밤에만 주의'}</span></div>
+          </li>`).join('')}</ul>`
+          : `<div class="hidden-note" style="margin:0">${icon('shield', 16)}<span>경로 전체가 밝고 사람이 다니는 길이에요</span></div>`}
+        <div class="label">안전 체크</div>
+        <ul class="checklist" style="border:0;padding:0;margin:0">
+          ${s.checks.map((k) => `<li class="${k.ok ? '' : 'bad'}">${icon(k.ok ? 'check' : 'alert', 16)}${esc(k.label)}</li>`).join('')}
+        </ul>
+        ${far.length ? `<p class="muted small" style="margin:14px 0 0">${far.map((x) => `${x.label} ${x.type === 'store' ? c.safety.storeM : c.safety.policeM}m`).join(', ')} — 지도 범위 밖에 있어요.</p>` : ''}
+        <p class="muted small" style="margin:14px 0 0">상대방의 정확한 위치는 표시하지 않고, 두 분의 중간 지점만 보여드려요. 지도는 간략화한 데모 지도예요.</p>
+      </div>`;
+    map?.destroy();
+    map = mountMap($('#mvMap', el), { course: c, slot, mid });
+    $('#mvClose', el).onclick = close;
+    bindToggles(el, (name, v) => { if (name === 'mvSlot') { slot = v; draw(); } });
+  };
+  draw();
 }
 
 function openSafetyMenu(p) {
@@ -736,6 +806,7 @@ function renderWalks() {
       </div>
       <div class="row">
         <button class="btn soft sm grow" data-chat="${p.id}">대화</button>
+        <button class="btn soft sm grow" data-course="${w.id}">${icon('route', 16)}지도</button>
         ${done
           ? (w.review
             ? `<button class="btn soft sm grow" disabled>평가 완료 · ${w.review.rating}점</button>`
@@ -747,6 +818,9 @@ function renderWalks() {
   }).join('') + '<p class="muted small" style="text-align:center;margin-top:8px">산책이 끝나면 매너 평가를 남겨주세요. 평가는 익명으로 반영돼요.</p>';
 
   view.querySelectorAll('[data-chat]').forEach((b) => { b.onclick = () => go('chat', { id: b.dataset.chat, back: 'walks' }); });
+  view.querySelectorAll('[data-course]').forEach((b) => {
+    b.onclick = () => { const w = state.walks.find((x) => x.id === b.dataset.course); openCourseMap(w.courseId, w.slot, w.personId); };
+  });
   view.querySelectorAll('[data-cancel]').forEach((b) => {
     b.onclick = () => {
       const w = state.walks.find((x) => x.id === b.dataset.cancel);

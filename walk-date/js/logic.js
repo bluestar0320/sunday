@@ -105,11 +105,12 @@ export function courseSafety(course, slot) {
 }
 
 // 두 사람 중간 지점 근처 코스를 안전도 우선으로 추천
+export function midpoint(a, b) {
+  return { lat: (a.location.lat + b.location.lat) / 2, lng: (a.location.lng + b.location.lng) / 2 };
+}
+
 export function recommendCourses(me, other, courses, { slot, safeOnly = true, limit = 4 } = {}) {
-  const mid = {
-    lat: (me.location.lat + other.location.lat) / 2,
-    lng: (me.location.lng + other.location.lng) / 2,
-  };
+  const mid = midpoint(me, other);
   const all = courses.map((c) => ({
     ...c,
     distanceKm: Math.round(distanceKm(mid, c) * 10) / 10,
@@ -140,4 +141,53 @@ export function walkStatus(walk, now = Date.now()) {
   if (now < start) return 'upcoming';
   if (now < start + 90 * 60 * 1000) return 'ongoing';
   return 'done';
+}
+
+// ---------- 지도 / 경로 ----------
+const M_PER_DEG_LAT = 110540;
+
+// 위경도 → 기준점에서의 미터 좌표 (x: 동쪽, y: 남쪽 — SVG 좌표계와 같은 방향)
+export function toMeters(origin, pt) {
+  return {
+    x: (pt.lng - origin.lng) * 111320 * Math.cos(toRad(origin.lat)),
+    y: -(pt.lat - origin.lat) * M_PER_DEG_LAT,
+  };
+}
+
+// 기준점에서 bearing(도, 북=0 시계방향) 방향으로 meters 떨어진 위경도
+export function offsetLatLng(origin, meters, bearing) {
+  const b = toRad(bearing);
+  return {
+    lat: origin.lat + (meters * Math.cos(b)) / M_PER_DEG_LAT,
+    lng: origin.lng + (meters * Math.sin(b)) / (111320 * Math.cos(toRad(origin.lat))),
+  };
+}
+
+export function pathLengthKm(path) {
+  let km = 0;
+  for (let i = 1; i < path.length; i++) km += distanceKm(path[i - 1], path[i]);
+  return km;
+}
+
+// 반려견과 걷는 속도 약 3.5km/h 기준
+export function courseStats(course) {
+  const km = pathLengthKm(course.path) * (course.roundTrip ? 2 : 1);
+  return { lengthKm: Math.round(km * 10) / 10, minutes: Math.max(5, Math.round((km / 3.5) * 60 / 5) * 5) };
+}
+
+// 경로 위의 주의 구간 목록. runs는 연속된 path 인덱스 구간 [from, to] 목록
+// (왕복 경로처럼 같은 위험 구간을 두 번 지나면 run이 둘)
+// when: 'night'(저녁·밤에만 주의) | 'always'(항상 주의)
+export function hazardSegments(course, slot) {
+  const night = NIGHT_SLOTS.includes(slot);
+  return (course.hazards || []).map((h, i) => {
+    const runs = [];
+    course.path.forEach((p, j) => {
+      if (p.h !== i) return;
+      const last = runs[runs.length - 1];
+      if (last && last[1] === j - 1) last[1] = j;
+      else runs.push([j, j]);
+    });
+    return { ...h, no: i + 1, runs, active: h.when === 'always' || night };
+  });
 }

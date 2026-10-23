@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   distanceKm, compatibility, rankCandidates, recommendCourses, courseSafety,
   isMutualMatch, averageRating, walkStatus,
+  toMeters, offsetLatLng, pathLengthKm, courseStats, hazardSegments,
 } from '../js/logic.js';
 import { PEOPLE, COURSES, DEFAULT_ME } from '../js/data.js';
 
@@ -84,4 +85,42 @@ test('walkStatus: 시작 전/90분 이내/이후', () => {
   assert.equal(walkStatus(walk, start - 1), 'upcoming');
   assert.equal(walkStatus(walk, start + 30 * 60 * 1000), 'ongoing');
   assert.equal(walkStatus(walk, start + 2 * 60 * 60 * 1000), 'done');
+});
+
+test('toMeters / offsetLatLng: 북쪽 100m는 y=-100, 되돌리면 거리 100m', () => {
+  const o = { lat: 37.556, lng: 126.906 };
+  const p = offsetLatLng(o, 100, 0);
+  const m = toMeters(o, p);
+  assert.ok(Math.abs(m.x) < 0.5 && Math.abs(m.y + 100) < 0.5);
+  const e = offsetLatLng(o, 250, 90);
+  assert.ok(Math.abs(distanceKm(o, e) * 1000 - 250) < 2);
+});
+
+test('courseStats: 경로 길이로 거리·시간 계산, 왕복은 2배', () => {
+  const path = [{ lat: 37.556, lng: 126.906 }, offsetLatLng({ lat: 37.556, lng: 126.906 }, 700, 0)];
+  assert.ok(Math.abs(pathLengthKm(path) - 0.7) < 0.01);
+  assert.deepEqual(courseStats({ path }), { lengthKm: 0.7, minutes: 10 });
+  assert.equal(courseStats({ path, roundTrip: true }).lengthKm, 1.4);
+});
+
+test('hazardSegments: 연속 구간으로 묶고, 야간 구간은 낮에 비활성', () => {
+  const c = { path: [{}, { h: 0 }, { h: 0 }, {}, { h: 0 }, {}, { h: 1 }], hazards: [{ note: 'a', when: 'night' }, { note: 'b', when: 'always' }] };
+  const day = hazardSegments(c, '점심');
+  assert.deepEqual(day[0].runs, [[1, 2], [4, 4]]);
+  assert.equal(day[0].active, false);
+  assert.equal(day[1].active, true);
+  assert.equal(hazardSegments(c, '밤')[0].active, true);
+});
+
+test('코스 데이터: 경로·주의 구간·시설 정보가 안전 정보와 일치', () => {
+  for (const c of COURSES) {
+    assert.ok(c.path.length >= 2, c.id);
+    assert.ok(c.lengthKm >= 0.8 && c.lengthKm <= 4, `${c.id} ${c.lengthKm}km`);
+    hazardSegments(c, '밤').forEach((h) => assert.ok(h.runs.length > 0, `${c.id} 주의 구간 경로 없음`));
+    const store = c.pois.find((p) => p.type === 'store');
+    assert.ok(Math.abs(distanceKm(c.path[0], store) * 1000 - c.safety.storeM) < 5, c.id);
+    assert.equal(c.pois.some((p) => p.type === 'cctv'), c.safety.cctv, c.id);
+    // 어둡고 가려진 코스에는 항상 주의 구간이 표시돼야 한다
+    if (!c.safety.openView) assert.ok(c.hazards.some((h) => h.when === 'always'), c.id);
+  }
 });
