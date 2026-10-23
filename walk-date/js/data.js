@@ -241,7 +241,11 @@ export const DEFAULT_ME = {
   bio: '', location: { lat: 37.5560, lng: 126.9060 }, walkTimes: ['저녁'],
   interests: [], safeMode: true,
   art: { fur: '#E8C9A0', muzzle: '#FFF6EA', ear: 'floppy', earColor: '#D7AE7C', bg: '#F3EEE8', collar: '#FF6B3D' },
-  dog: { name: '', breed: '', size: '소형', age: 2, energy: '보통', friendly: true, traits: [], photos: [] },
+  dog: {
+    name: '', breed: '', size: '소형', age: 2, energy: '보통', friendly: true, traits: [], photos: [],
+    health: { vaccinated: false, neutered: false, bite: false, allergies: '' }, registryNo: '',
+  },
+  phone: '',
 };
 
 export const INTERESTS = ['카페', '사진', '전시', '러닝', '캠핑', '보드게임', '독서', '베이킹', '요가', '요리', '등산', '맛집', '음악', '여행'];

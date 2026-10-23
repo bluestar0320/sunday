@@ -7,123 +7,13 @@ import {
 import { icon, dogArt, resizeImage, SAFETY_ICON, walkScene } from './ui.js';
 import { mountMap } from './map.js';
 
-const STORAGE_KEY = 'walkdate:v2';
+import {
+  $, view, state, route, save, resetState, esc, person, course, matchOf, photosOf, media, characterArt,
+  toast, openModal, closeModal, DAYS, fmtDate, safeBadge, segHtml, chipsHtml, bindToggles, segVal, chipVals,
+  go, setTop, render, updateBadge, registerView, startTicker,
+} from './core.js';
+
 const MAX_PHOTOS = 5;
-const $ = (sel, root = document) => root.querySelector(sel);
-const view = $('#view');
-
-// ---------- 상태 ----------
-function freshState() {
-  return {
-    onboarded: false,
-    me: structuredClone(DEFAULT_ME),
-    seen: [],
-    matches: [], // { personId, matchedAt, messages: [{from, text, at, kind, walkId}], unread }
-    walks: [],   // { id, personId, courseId, datetime, slot, status: 'pending'|'confirmed'|'cancelled', review }
-    blocked: [],
-    filters: { maxKm: 5, sizes: [...SIZES] },
-  };
-}
-
-function load() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const saved = JSON.parse(raw);
-      const base = freshState();
-      return { ...base, ...saved, me: { ...base.me, ...saved.me, dog: { ...base.me.dog, ...saved.me?.dog } } };
-    }
-  } catch { /* 저장소 사용 불가 시 새 상태로 시작 */ }
-  return freshState();
-}
-
-let state = load();
-let route = { name: state.onboarded ? 'discover' : 'onboarding', step: 0 };
-
-function save() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    return true;
-  } catch {
-    toast('저장 공간이 부족해요. 사진 수를 줄여주세요.');
-    return false;
-  }
-}
-
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const person = (id) => (id === 'me' ? state.me : PEOPLE.find((p) => p.id === id));
-const course = (id) => COURSES.find((c) => c.id === id);
-const matchOf = (id) => state.matches.find((m) => m.personId === id);
-const photosOf = (p) => p.dog.photos || [];
-
-// 사진이 있으면 사진, 없으면 일러스트
-function media(p, i = 0) {
-  const src = photosOf(p)[i];
-  if (src) return `<img class="photo" src="${src}" alt="${esc(p.dog.name)} 사진" />`;
-  return characterArt(p);
-}
-
-// 샘플 강아지 캐릭터 이미지. 불러오지 못하면 그 아래 깔린 일러스트가 그대로 보인다
-function characterArt(p) {
-  if (!p.img) return dogArt(p.art);
-  return `<div class="art-wrap">${dogArt(p.art)}<img class="photo" src="${p.img}" alt="${esc(p.dog.name)} 캐릭터" loading="lazy" onerror="this.remove()" /></div>`;
-}
-
-function toast(msg) {
-  const t = $('#toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove('show'), 2400);
-}
-
-function openModal(html, onMount) {
-  $('#modalBody').innerHTML = html;
-  $('#modal').hidden = false;
-  $('#modalBody').scrollTop = 0;
-  onMount?.($('#modalBody'));
-}
-function closeModal() { $('#modal').hidden = true; }
-$('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
-
-const DAYS = '일월화수목금토';
-function fmtDate(iso) {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${DAYS[d.getDay()]}) ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-function safeBadge(level) {
-  return `<span class="safe-badge lv-${level}">${icon(level === '주의' ? 'alert' : 'shield', 13)}${level}</span>`;
-}
-
-// ---------- 라우팅 / 상단 바 ----------
-function go(name, params = {}) {
-  route = { name, ...params };
-  render();
-}
-
-function setTop(title, { back = false, actions = '' } = {}) {
-  $('#title').textContent = title;
-  $('#backBtn').hidden = !back;
-  $('#topbar').classList.toggle('has-back', back);
-  $('#topActions').innerHTML = actions;
-}
-
-function render() {
-  $('#tabbar').hidden = route.name === 'onboarding';
-  document.querySelectorAll('#tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === route.name));
-  view.classList.toggle('flush', route.name === 'discover' || route.name === 'chat');
-  view.scrollTop = 0;
-  updateBadge();
-  ({ onboarding: renderOnboarding, discover: renderDiscover, matches: renderMatches, chat: renderChat, walks: renderWalks, profile: renderProfile })[route.name]();
-}
-
-function updateBadge() {
-  const btn = $('#tabbar [data-tab="matches"]');
-  btn.querySelector('.badge')?.remove();
-  const unread = state.matches.filter((m) => m.unread && !state.blocked.includes(m.personId)).length;
-  if (unread) btn.insertAdjacentHTML('beforeend', `<i class="badge">${unread}</i>`);
-}
 
 document.querySelectorAll('#tabbar button').forEach((b) => b.insertAdjacentHTML('afterbegin', icon(b.dataset.icon, 24)));
 $('#backBtn').innerHTML = icon('back', 24);
@@ -136,27 +26,6 @@ $('#backBtn').addEventListener('click', () => {
   else go(route.back || 'matches');
 });
 
-// ---------- 폼 토글 공통 ----------
-function segHtml(name, options, value) {
-  return `<div class="seg" data-seg="${name}">${options.map((o) => `<button type="button" data-v="${esc(o)}" class="${o === value ? 'on' : ''}">${esc(o)}</button>`).join('')}</div>`;
-}
-function chipsHtml(name, options, values) {
-  return `<div class="chips" data-chips="${name}">${options.map((o) => `<button type="button" class="tag ${values.includes(o) ? 'on' : ''}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>`;
-}
-function bindToggles(root, onChange) {
-  root.querySelectorAll('[data-seg]').forEach((seg) => seg.addEventListener('click', (e) => {
-    const b = e.target.closest('button'); if (!b) return;
-    seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
-    onChange?.(seg.dataset.seg, b.dataset.v);
-  }));
-  root.querySelectorAll('[data-chips]').forEach((c) => c.addEventListener('click', (e) => {
-    const b = e.target.closest('button'); if (!b) return;
-    b.classList.toggle('on');
-    onChange?.(c.dataset.chips);
-  }));
-}
-const segVal = (name, root = document) => root.querySelector(`[data-seg="${name}"] .on`)?.dataset.v;
-const chipVals = (name, root = document) => [...root.querySelectorAll(`[data-chips="${name}"] .on`)].map((b) => b.dataset.v);
 
 // ---------- 사진 업로드 ----------
 function pickFiles() {
@@ -949,10 +818,17 @@ function renderProfile() {
   });
   $('#reset').onclick = () => {
     if (!confirm('모든 데이터를 지우고 처음부터 시작할까요?')) return;
-    state = freshState();
-    save();
+    resetState();
     go('onboarding', { step: 0 });
   };
 }
 
+registerView('onboarding', renderOnboarding);
+registerView('discover', renderDiscover);
+registerView('matches', renderMatches);
+registerView('chat', renderChat);
+registerView('walks', renderWalks);
+registerView('profile', renderProfile);
+
 render();
+startTicker();

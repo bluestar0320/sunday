@@ -609,3 +609,17 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   .breeze .leaf { display: none; }
 }
+
+/* 알림 센터 */
+#topActions { display: flex; gap: 6px; }
+#topActions .icon-btn { position: relative; }
+.dot-badge { top: 2px; left: auto; right: 0; }
+.notice-list { display: grid; gap: 8px; }
+.notice-item { display: flex; gap: 12px; align-items: flex-start; width: 100%; text-align: left; padding: 14px 16px; border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-sm); }
+.notice-item.unread { box-shadow: inset 3px 0 0 var(--heart), var(--shadow-sm); }
+.notice-item .ni { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex-shrink: 0; }
+.notice-item.k-alert .ni, .notice-item.k-safety .ni { background: var(--danger-soft); color: var(--danger); }
+.notice-item.k-like .ni, .notice-item.k-match .ni { background: var(--heart-soft); color: var(--heart); }
+.notice-item.k-weather .ni { background: #E3EEF6; color: #4F7EA3; }
+.notice-item .t { display: block; font-size: 14px; line-height: 1.5; }
+.notice-item .w { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
