@@ -4,16 +4,18 @@ import {
   rankCandidates, compatibility, recommendCourses, courseSafety, isMutualMatch,
   walkStatus, ageFromBirthYear, midpoint, hazardSegments,
   healthFlags, isVerified, validRegistryNo, normalizePhone,
-  forecastFor, respondToProposal, reminderTimes, dueReminders, dueLikeBacks, recordStats,
-  mannerSummary, mannerFromReviews, isLateCancel, relativeDay, detectSensitive,
+  respondToProposal, reminderTimes, dueReminders, dueLikeBacks, recordStats,
+  mannerSummary, mannerFromReviews, isLateCancel, relativeDay, detectSensitive, RULES,
 } from './logic.js';
 import { icon, dogArt, resizeImage, SAFETY_ICON, walkScene } from './ui.js';
 import { mountMap } from './map.js';
+import { initServices, onServicesChange, services, weatherFor, hasRealWeather, requestCode, checkCode } from './services.js';
+import { kakaoEnabled, mountKakaoMap } from './kakao-map.js';
 
 import {
   $, view, state, route, save, resetState, esc, person, course, matchOf, photosOf, media, characterArt,
   toast, openModal, closeModal, DAYS, fmtDate, safeBadge, segHtml, chipsHtml, bindToggles, segVal, chipVals,
-  go, setTop, render, updateBadge, registerView, startTicker, isWalkDone, switchHtml, notify, uid, onTick, walkWho, likesForMe, groupById, mannerOf, withManner,
+  go, setTop, render, updateBadge, registerView, startTicker, isWalkDone, isDemo, switchHtml, notify, uid, onTick, walkWho, likesForMe, groupById, mannerOf, withManner,
 } from './core.js';
 import { startWalk, openGuardians, onWalkEnded, activeSession } from './safety.js';
 import { renderGroups, openGroup, membersOf } from './groups.js';
@@ -568,7 +570,7 @@ function renderChat() {
       fakeReply(p);
     };
     // 첫 산책 전에 연락처·SNS를 보내려 하면 한 번 더 확인
-    if (detectSensitive(text).contact && !recordsWith(p.id).length) confirmContactShare(send);
+    if (RULES.contactWarnBeforeFirstWalk && detectSensitive(text).contact && !recordsWith(p.id).length) confirmContactShare(send);
     else send();
   };
   $('#attach').onclick = async () => {
@@ -596,8 +598,8 @@ const WALK_STATE = { pending: '답을 기다리는 중', confirmed: '약속 확�
 const SKY_ICON = { '맑음': 'sunny', '흐림': 'cloud', '비': 'rain' };
 
 function weatherHtml(iso, { full = false } = {}) {
-  const f = forecastFor(iso);
-  return `<span class="wx ${f.rainy ? 'rainy' : ''}">${icon(SKY_ICON[f.sky], 14)}${f.sky}${full ? ` ${f.tempC}° · 강수 ${f.rainProb}%` : ''}</span>`;
+  const f = weatherFor(iso);
+  return `<span class="wx ${f.rainy ? 'rainy' : ''}">${icon(SKY_ICON[f.sky], 14)}${f.sky}${full ? ` ${f.tempC ?? '-'}° · 강수 ${f.rainProb}%` : ''}</span>`;
 }
 
 function msgHtml(msg) {
@@ -726,14 +728,14 @@ export function openProposal(p, { replace = null, courseId = null } = {}) {
       const pin = all.find((c) => c.id === pinned);
       if (pin && !courses.includes(pin)) courses.unshift(pin);
       if (!courses.some((c) => c.id === ui.courseId)) ui.courseId = courses[0]?.id ?? null;
-      const f = forecastFor(days[ui.day]);
+      const f = weatherFor(new Date(days[ui.day]).setHours(SLOT_HOUR[ui.slot]));
       const scroll = root.scrollTop;
       root.innerHTML = `
         <h3>${title}</h3>
         <p class="desc">두 분 사이 중간 지점 근처에서, 선택한 시간대에 안전한 코스를 추천해요.</p>
-        <div class="label">날짜 <span class="muted small" style="font-weight:400">데모 예보</span></div>
+        <div class="label">날짜 <span class="muted small" style="font-weight:400">${hasRealWeather() ? '기상청 단기예보 (먼 날짜는 데모)' : '데모 예보'}</span></div>
         <div class="chips" data-seg="day">${days.map((d, i) => {
-          const fd = forecastFor(d);
+          const fd = weatherFor(new Date(d).setHours(SLOT_HOUR[ui.slot]));
           return `<button type="button" class="tag ${i === ui.day ? 'on' : ''} ${fd.rainy ? 'rainy' : ''}" data-v="${i}">${dayLabel(d, i)} ${icon(SKY_ICON[fd.sky], 14)}</button>`;
         }).join('')}</div>
         ${f.rainy ? `<div class="notice warn" style="margin-top:10px">${icon('rain', 18)}<span>이날은 비 예보(강수확률 ${f.rainProb}%)가 있어요. 다른 날을 추천해요.</span></div>` : ''}
@@ -902,6 +904,12 @@ export function openCourseMap(courseId, slot, personId) {
       </div>`;
     map?.destroy();
     map = mountMap($('#mvMap', el), { course: c, slot, mid });
+    if (kakaoEnabled()) {
+      // 카카오 지도 키가 있으면 실제 지도로 바꾼다 (실패하면 간략 지도 유지)
+      mountKakaoMap($('#mvMap', el), { course: c, slot, mid })
+        .then((km) => { map?.destroy(); map = km; })
+        .catch((err) => toast(`${err.message} · 간략 지도로 보여드려요`));
+    }
     $('#mvClose', el).onclick = close;
     bindToggles(el, (name, v) => { if (name === 'mvSlot') { slot = v; draw(); } });
   };
@@ -1007,7 +1015,7 @@ export function renderWalks() {
     const p = person(w.personId);
     const c = course(w.courseId);
     const s = courseSafety(c, w.slot);
-    const f = forecastFor(w.datetime);
+    const f = weatherFor(w.datetime);
     const [cls, txt] = label(w);
     const done = isWalkDone(w);
     const live = w.session && !w.session.endedAt;
@@ -1025,7 +1033,7 @@ export function renderWalks() {
     } else {
       actions = `${w.status === 'confirmed' && !live ? `<button class="btn soft sm grow" data-w-change="${w.id}">일정 변경</button>` : ''}
         <button class="btn soft sm grow" data-cancel="${w.id}">취소</button>
-        ${w.status === 'confirmed' ? `<button class="btn outline sm grow" data-finish="${w.id}" title="데모: 산책을 완료 처리">완료 처리</button>` : ''}`;
+        ${w.status === 'confirmed' && isDemo() ? `<button class="btn outline sm grow" data-finish="${w.id}" title="데모: 산책을 완료 처리">완료 처리</button>` : ''}`;
     }
     return `<div class="walk">
       <div class="head"><span class="when">${fmtDate(w.datetime)}</span><span class="status ${cls}">${txt}</span></div>
@@ -1058,7 +1066,7 @@ export function renderWalks() {
       const w = state.walks.find((x) => x.id === b.dataset.cancel);
       const late = isLateCancel(w);
       const msg = w.status === 'pending' ? '산책 제안을 취소할까요?'
-        : late ? '약속 3시간 전 이내 취소예요.\n늦은 취소는 내 매너 평가에 기록되고, 상대에게도 알림이 가요. 그래도 취소할까요?' : '산책 약속을 취소할까요?';
+        : late ? `약속 ${RULES.lateCancelHours}시간 전 이내 취소예요.\n늦은 취소는 내 매너 평가에 기록되고, 상대에게도 알림이 가요. 그래도 취소할까요?` : '산책 약속을 취소할까요?';
       if (!confirm(msg)) return;
       if (late) state.penalties.lateCancels += 1;
       w.status = 'cancelled';
@@ -1104,7 +1112,7 @@ function groupWalkHtml(w, [cls, txt]) {
     <div class="row">
       ${g ? `<button class="btn soft sm grow" data-g-open="${g.id}">모임 정보</button>` : ''}
       <button class="btn soft sm grow" data-course="${w.id}">${icon('route', 16)}지도</button>
-      ${!done ? `<button class="btn outline sm grow" data-finish="${w.id}" title="데모: 산책을 완료 처리">완료 처리</button>` : ''}
+      ${!done && isDemo() ? `<button class="btn outline sm grow" data-finish="${w.id}" title="데모: 산책을 완료 처리">완료 처리</button>` : ''}
     </div>
     ${!done ? `<button class="btn ${live ? 'sos' : 'accent'} start-walk" data-start="${w.id}">${icon(live ? 'shield' : 'play', 18)}${live ? '안심 산책 화면 열기' : '안심 산책 시작'}</button>` : ''}
   </div>`;
@@ -1125,7 +1133,7 @@ function openReview(w) {
       <div class="field"><label>다시 만나고 싶나요?</label>${segHtml('again', ['또 만나고 싶어요', '친구로 지낼래요'], '또 만나고 싶어요')}</div>
     </div>
     <div id="noShowFields" hidden>
-      <div class="notice warn" style="margin:18px 0">${icon('alert', 18)}<span>노쇼로 신고하면 상대의 매너 평가에 반영돼요. 노쇼가 2번 쌓이면 추천과 산책 제안이 제한돼요. 상대에게 신고한 사람은 알려지지 않아요.</span></div>
+      <div class="notice warn" style="margin:18px 0">${icon('alert', 18)}<span>노쇼로 신고하면 상대의 매너 평가에 반영돼요. 노쇼가 ${RULES.noShowLimit}번 쌓이면 추천과 산책 제안이 제한돼요. 상대에게 신고한 사람은 알려지지 않아요.</span></div>
     </div>
     <button class="btn" id="submit">평가 남기기</button>`, (root) => {
     bindToggles(root, (name, v) => {
@@ -1187,18 +1195,21 @@ function openPhoneVerify() {
     <button class="btn outline" id="v-send">인증번호 받기</button>
     <div id="v-code-wrap" hidden style="margin-top:16px">
       <div class="field"><label for="v-code">인증번호 6자리</label><input class="input" id="v-code" inputmode="numeric" maxlength="6" /></div>
-      <p class="muted small" style="margin:-8px 0 16px">데모라서 실제 문자는 가지 않아요. 인증번호는 <b>123456</b>이에요.</p>
+      ${services().verify ? '<p class="muted small" style="margin:-8px 0 16px">문자로 받은 인증번호를 3분 안에 입력해 주세요.</p>' : '<p class="muted small" style="margin:-8px 0 16px">문자 서비스가 연결되지 않아 데모로 진행해요. 인증번호는 <b>123456</b>이에요.</p>'}
       <button class="btn accent" id="v-ok">인증 완료</button>
     </div>`, (root) => {
-    $('#v-send', root).onclick = () => {
+    $('#v-send', root).onclick = async () => {
       const phone = normalizePhone($('#v-phone', root).value);
       if (!phone) { toast('휴대폰 번호를 확인해 주세요'); return; }
       me.phone = phone;
+      const r = await requestCode(phone);
+      if (r.ok === false) { toast(r.error); return; }
       $('#v-code-wrap', root).hidden = false;
-      toast('인증번호를 보냈어요 (데모: 123456)');
+      toast(r.demo ? '데모 인증번호는 123456이에요' : '인증번호를 문자로 보냈어요');
     };
-    $('#v-ok', root).onclick = () => {
-      if ($('#v-code', root).value !== '123456') { toast('인증번호가 맞지 않아요'); return; }
+    $('#v-ok', root).onclick = async () => {
+      const r = await checkCode(me.phone, $('#v-code', root).value.trim());
+      if (!r.ok) { toast(r.error || '인증번호가 맞지 않아요'); return; }
       me.verified.phone = true;
       save(); closeModal(); render();
       notify('본인 인증을 완료했어요', { kind: 'info', device: false });
@@ -1251,7 +1262,7 @@ function renderProfile() {
     <div class="label">${icon('star', 16)}내가 받은 매너 평가</div>
     ${mannerHtml(myManner, { mine: true })}
     ${state.received.length ? `<div class="stack" style="margin-top:10px">${state.received.slice(0, 3).map((r) => `<div class="menu-item received">${icon('star', 18, 'filled')}<span class="grow"><b>★${r.rating}</b> <span class="muted small">${esc(person(r.from).name)}님 · ${r.tags.map(esc).join(', ')}</span></span></div>`).join('')}</div>` : ''}
-    <p class="muted small" style="margin:10px 4px 0">약속 3시간 전 이내 취소 ${state.penalties.lateCancels}회 · 노쇼 ${state.penalties.noShows}회. 노쇼가 2번 쌓이면 추천과 산책 제안이 제한돼요.</p>
+    <p class="muted small" style="margin:10px 4px 0">약속 ${RULES.lateCancelHours}시간 전 이내 취소 ${state.penalties.lateCancels}회 · 노쇼 ${state.penalties.noShows}회. 노쇼가 ${RULES.noShowLimit}번 쌓이면 추천과 산책 제안이 제한돼요.</p>
 
     <div class="label">사진 <span class="muted small" style="font-weight:400">첫 번째 사진이 대표 사진이에요</span></div>
     ${photoGridHtml()}
@@ -1272,14 +1283,23 @@ function renderProfile() {
     <label class="switch-row" style="margin-top:8px;background:var(--accent-soft)">${icon('bell', 22)}<div class="grow"><div class="t">기기 알림 받기</div><div class="d">산책 전날 · 1시간 전 알림, 안심 산책 알림을 휴대폰 알림으로도 보내요</div></div>${switchHtml('deviceNotify', state.settings.deviceNotify)}</label>
     <button class="menu-item" id="guardians" style="margin-top:8px">${icon('users', 20)}<span class="grow" style="text-align:left">안심 연락처 · 자동 알림 설정</span><span class="muted small">${state.guardians.length}명</span></button>
 
+    <div class="label">${icon('link', 16)}연결된 서비스</div>
+    <div class="services">
+      <span class="${services().weather ? 'on' : ''}">${icon('sunny', 14)}기상청 날씨 · ${services().weather ? '연결됨' : '데모'}</span>
+      <span class="${services().sms ? 'on' : ''}">${icon('send', 14)}문자 · 휴대폰 인증 · ${services().sms ? '연결됨' : '데모'}</span>
+      <span class="${kakaoEnabled() ? 'on' : ''}">${icon('route', 14)}카카오 지도 · ${kakaoEnabled() ? '키 등록됨' : '간략 지도'}</span>
+    </div>
+
     <div class="label">프로필</div>
     <button class="menu-item" id="editMe">${icon('user', 20)}<span class="grow" style="text-align:left">보호자 정보 수정</span></button>
     <button class="menu-item" id="editDog">${icon('edit', 20)}<span class="grow" style="text-align:left">강아지 정보 수정</span></button>
+    <label class="switch-row" style="margin:8px 0;background:var(--bg-soft)">${icon('sparkle', 22)}<div class="grow"><div class="t">데모 기능 보기</div><div class="d">시연용 '10분 앞으로 감기', '완료 처리' 버튼을 보여줘요. 실제 출시 땐 꺼 두세요.</div></div>${switchHtml('demoMode', isDemo())}</label>
     <button class="menu-item danger" id="reset">${icon('trash', 20)}<span class="grow" style="text-align:left">데모 데이터 초기화</span></button>`;
 
   bindPhotoGrid(view, () => { $('.me-head .thumb').innerHTML = media(me); });
   $('#safeMode').onchange = (e) => { me.safeMode = e.target.checked; save(); toast(e.target.checked ? '안심 코스만 추천할게요' : '모든 코스를 추천할게요'); };
   $('#guardians').onclick = () => openGuardians(() => render());
+  $('#demoMode').onchange = (e) => { state.settings.demo = e.target.checked; save(); toast(e.target.checked ? '데모 기능을 켰어요' : '데모 기능을 껐어요'); };
   $('#deviceNotify').onchange = async (e) => {
     if (e.target.checked && 'Notification' in window && Notification.permission !== 'granted') {
       const perm = await Notification.requestPermission().catch(() => 'denied');
@@ -1328,7 +1348,7 @@ onTick((now) => {
     state.fired.push(r.key);
     const w = r.walk;
     const who = walkWho(w).title;
-    const f = forecastFor(w.datetime);
+    const f = weatherFor(w.datetime);
     const rain = f.rainy ? ` · 비 예보 ${f.rainProb}%` : '';
     notify(r.kind === 'day'
       ? `${relativeDay(w.datetime)} ${fmtDate(w.datetime).replace(/^.*\) /, '')} ${w.groupId ? `'${who}' 모임 산책이 있어요` : `${who}님과 산책 약속이 있어요`}${rain}`
@@ -1355,3 +1375,6 @@ registerView('profile', renderProfile);
 
 render();
 startTicker();
+// 서버에 연결된 실제 서비스(날씨·문자·인증)를 확인하고, 연결되면 화면을 다시 그린다
+onServicesChange(() => { if (route.name !== 'onboarding') render(); });
+initServices(state.me.location);

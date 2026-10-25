@@ -765,3 +765,11 @@ button.tag.rainy .ic { color: #4F7EA3; }
 .msg-warn .ic { margin-top: 2px; }
 .msg-warn button { margin-left: auto; color: var(--danger); font-weight: 700; white-space: nowrap; text-decoration: underline; text-underline-offset: 2px; }
 .composer input { min-width: 0; }
+
+/* 연결된 서비스 · 카카오 지도 마커 */
+.services { display: flex; flex-wrap: wrap; gap: 6px; }
+.services span { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 12px; border-radius: 999px; background: var(--bg-soft); color: var(--muted); font-size: 12px; font-weight: 600; }
+.services span.on { background: var(--safe-soft); color: var(--safe); }
+.kmk { position: relative; }
+.kmk > span { position: static; transform: none; }
+.map.kakao .map-ctrl { display: none; }

@@ -1,6 +1,6 @@
 // 앱 전체가 함께 쓰는 상태·저장·화면 전환·공통 UI
 import { PEOPLE, COURSES, DEFAULT_ME, GROUPS } from './data.js';
-import { SIZES, receivedLikes, mannerSummary } from './logic.js';
+import { SIZES, RULES, receivedLikes, mannerSummary } from './logic.js';
 import { icon, dogArt } from './ui.js';
 
 const STORAGE_KEY = 'walkdate:v2';
@@ -23,7 +23,7 @@ export function freshState() {
     notices: [],      // 알림 센터 { id, at, text, kind, read, to }
     fired: [],        // 이미 보낸 예약 알림 id
     guardians: [],    // 안심 연락처 { id, name, phone }
-    settings: { graceMin: 15, checkinMin: 20, deviceNotify: false },
+    settings: { graceMin: RULES.alertGraceMin, checkinMin: RULES.checkinMin, deviceNotify: false, demo: false },
     groups: [],       // 내가 만든 모임
     joinedGroups: [], // 참여한 모임 id
     records: [],      // 산책 기록 { id, walkId, personId | groupId, courseId, date, km, minutes, photos, memo }
@@ -52,6 +52,9 @@ function load() {
 }
 
 export let state = load();
+// 시연할 때는 주소 뒤에 ?demo=1 을 붙이면 데모 기능(시간 앞당기기·완료 처리)이 켜진다
+if (new URLSearchParams(location.search).get('demo') === '1') state.settings.demo = true;
+export const isDemo = () => Boolean(state.settings.demo);
 export let route = { name: state.onboarded ? 'discover' : 'onboarding', step: 0 };
 
 export function resetState() {

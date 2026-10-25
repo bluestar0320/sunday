@@ -1,6 +1,7 @@
 // 동네 산책 모임: 1:1보다 부담이 적은 3~6명 그룹 산책
 import { PEOPLE, COURSES, GROUPS } from './data.js';
-import { TIME_SLOTS, SIZES, courseSafety, groupFit, forecastFor, mannerSummary } from './logic.js';
+import { TIME_SLOTS, SIZES, courseSafety, groupFit, mannerSummary } from './logic.js';
+import { weatherFor } from './services.js';
 import {
   $, state, save, esc, person, course, media, toast, openModal, closeModal, fmtDate, safeBadge, uid,
   segHtml, bindToggles, segVal, groupById, notify, onTick, DAYS,
@@ -24,7 +25,7 @@ function groupCard(g) {
   const c = course(g.courseId);
   const s = courseSafety(c, g.slot);
   const fit = groupFit(g, state.me, members);
-  const f = forecastFor(g.datetime);
+  const f = weatherFor(g.datetime);
   return `<div class="group ${fit.joined ? 'joined' : ''}" data-group="${g.id}" role="button" tabindex="0">
     <div class="g-top"><span class="g-title">${esc(g.title)}</span>${g.hostId === 'me' ? '<span class="tag" style="height:24px;font-size:12px">내 모임</span>' : ''}</div>
     <div class="g-meta">${icon('clock', 14)}${fmtDate(g.datetime)} <span class="wx ${f.rainy ? 'rainy' : ''}">${f.sky}</span></div>
@@ -55,14 +56,14 @@ export function openGroup(id) {
   const s = courseSafety(c, g.slot);
   const fit = groupFit(g, state.me, members);
   const host = person(g.hostId);
-  const f = forecastFor(g.datetime);
+  const f = weatherFor(g.datetime);
   openModal(`
     <h3>${esc(g.title)}</h3>
     <p class="desc">${g.hostId === 'me' ? '내가 만든 모임' : `모임장 ${esc(host.name)} · ${esc(host.dog.name)}`}</p>
     <div class="walk-info">
       <div>${icon('clock', 16)}${fmtDate(g.datetime)} · ${g.slot}</div>
       <div>${icon('pin', 16)}${esc(c.name)} · ${c.lengthKm}km · 약 ${c.minutes}분 ${safeBadge(s.level)}</div>
-      <div>${icon(f.rainy ? 'rain' : f.sky === '흐림' ? 'cloud' : 'sunny', 16)}예보 ${f.sky} ${f.tempC}° · 강수 ${f.rainProb}%</div>
+      <div>${icon(f.rainy ? 'rain' : f.sky === '흐림' ? 'cloud' : 'sunny', 16)}예보 ${f.sky} ${f.tempC ?? '-'}° · 강수 ${f.rainProb}%</div>
       <div>${icon('paw', 16)}${g.sizeRule === '모두' ? '모든 크기의 강아지' : `${g.sizeRule}견만`} · 최대 ${g.capacity}명</div>
     </div>
     ${g.note ? `<p class="bio" style="margin:12px 2px">${esc(g.note)}</p>` : ''}

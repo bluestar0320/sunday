@@ -4,6 +4,17 @@ export const SIZES = ['소형', '중형', '대형'];
 export const ENERGY = ['느긋', '보통', '활발'];
 export const TIME_SLOTS = ['이른 아침', '점심', '저녁', '밤'];
 
+// 안전·매너 규칙 (값을 바꾸면 앱 전체 동작과 안내 문구가 함께 바뀐다)
+export const RULES = {
+  alertGraceMin: 15,         // 예정 종료 시간이 이만큼 지나면 안심 연락처에 자동 알림 (기본값, MY에서 변경 가능)
+  checkinMin: 20,            // 안심 산책 중 체크인 간격 (기본값, MY에서 변경 가능)
+  extendMin: 15,             // '연장' 버튼 한 번에 늘어나는 시간
+  noShowLimit: 2,            // 노쇼가 이만큼 쌓이면 추천·제안 제한
+  lateCancelHours: 3,        // 약속 이 시간 전 이내 취소는 늦은 취소
+  dayReminderSkipHours: 3,   // 약속이 이 시간도 안 남았으면 전날 알림 생략
+  contactWarnBeforeFirstWalk: true, // 첫 산책 전 연락처 공유 시 확인
+};
+
 const toRad = (deg) => (deg * Math.PI) / 180;
 
 // 두 좌표 사이 거리(km) — 하버사인 공식
@@ -326,8 +337,8 @@ export function dueReminders(walks, fired, now) {
     .filter((w) => w.status === 'confirmed' && !w.completedAt && now < new Date(w.datetime).getTime())
     .flatMap((w) => reminderTimes(w).map((r) => ({ ...r, walk: w })))
     .filter((r) => r.at <= now && !done.has(r.key))
-    // 약속이 3시간도 안 남았으면 '전날 알림'은 건너뛴다 (1시간 전 알림만)
-    .filter((r) => r.kind !== 'day' || new Date(r.walk.datetime).getTime() - now > 3 * 3600000);
+    // 약속이 얼마 안 남았으면 '전날 알림'은 건너뛴다 (1시간 전 알림만)
+    .filter((r) => r.kind !== 'day' || new Date(r.walk.datetime).getTime() - now > RULES.dayReminderSkipHours * 3600000);
 }
 
 // 알림 문구용: 오늘 / 내일 / 10월 25일
@@ -404,7 +415,7 @@ export function mannerSummary(m = {}) {
     count, avg, topTags, noShows, lateCancels,
     badge: avg !== null && avg >= 4.5 && count >= 5 && noShows === 0 ? '매너 우수' : null,
     warning: noShows ? `노쇼 ${noShows}회` : lateCancels >= 2 ? `늦은 취소 ${lateCancels}회` : null,
-    restricted: noShows >= 2, // 노쇼 2회부터 추천·제안 제한
+    restricted: noShows >= RULES.noShowLimit, // 노쇼가 반복되면 추천·제안 제한
   };
 }
 
@@ -419,9 +430,9 @@ export function mannerFromReviews(reviews, penalties = {}) {
   };
 }
 
-// 확정된 약속을 시작 3시간 이내에 취소하면 늦은 취소
+// 확정된 약속을 시작 RULES.lateCancelHours 이내에 취소하면 늦은 취소
 export const isLateCancel = (walk, now = Date.now()) => walk.status === 'confirmed'
-  && new Date(walk.datetime).getTime() - now < 3 * 3600000;
+  && new Date(walk.datetime).getTime() - now < RULES.lateCancelHours * 3600000;
 
 // ---------- 채팅 안전 ----------
 // 첫 산책 전 연락처·SNS 교환, 외부 링크, 금전 요청을 찾아낸다

@@ -1,17 +1,28 @@
 // 산책 당일 안심 기능: 안심 연락처, 실시간 위치 공유, 중간 체크인, 예정 시간 초과 시 자동 알림, 긴급 SOS
 import {
   $, view, state, route, save, esc, course, toast, openModal, closeModal, fmtTime, uid,
-  go, setTop, notify, registerView, onAfterRender, onTick, switchHtml, walkWho,
+  go, setTop, notify, registerView, onAfterRender, onTick, switchHtml, walkWho, isDemo,
 } from './core.js';
-import { sessionStatus, positionAlongPath, normalizePhone, distanceKm } from './logic.js';
+import { RULES, sessionStatus, positionAlongPath, normalizePhone, distanceKm } from './logic.js';
 import { icon } from './ui.js';
 import { mountMap } from './map.js';
+import { sendSms, services } from './services.js';
 
-const SHARE_BASE = 'https://walkdate.app/live/'; // 데모용 공유 링크 (실제 서버 없음)
 
 export const activeSession = () => state.walks.find((w) => w.session && !w.session.endedAt);
 const statusOf = (w, now = Date.now()) => sessionStatus(w.session, now, state.settings);
 const guardianNames = (ids) => state.guardians.filter((g) => ids.includes(g.id)).map((g) => g.name);
+
+const mapLink = (p, name = '현재 위치') => `https://map.kakao.com/link/map/${encodeURIComponent(name)},${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
+
+// 위치를 공유한 안심 연락처에게 문자. 서버에 문자 서비스가 연결돼 있으면 실제로 보내고, 아니면 데모로 기록만 남긴다
+async function textGuardians(w, text, logText, kind = 'share') {
+  const phones = state.guardians.filter((g) => w.session.sharedWith.includes(g.id)).map((g) => g.phone);
+  if (!phones.length) return false;
+  const real = await sendSms(phones, text);
+  logEvent(w, `${logText}${real ? '' : ' (데모: 실제 문자는 가지 않았어요)'}`, kind);
+  return real;
+}
 
 function logEvent(w, text, kind = 'info') {
   w.session.events.unshift({ at: Date.now() + (w.session.offsetMs || 0), text, kind });
@@ -107,10 +118,13 @@ function confirmStart(w) {
       const plannedMin = c.minutes + 30; // 인사·쉬는 시간 여유
       w.session = {
         startedAt: now, plannedMin, expectedEnd: now + plannedMin * 60000, offsetMs: 0,
-        sharedWith: shared, shareCode: uid('').slice(0, 10), checkins: [], events: [], alertedAt: null, endedAt: null,
+        sharedWith: shared, checkins: [], events: [], alertedAt: null, endedAt: null,
       };
       logEvent(w, '안심 산책을 시작했어요', 'start');
-      if (shared.length) logEvent(w, `${guardianNames(shared).join(', ')}님에게 실시간 위치 링크를 보냈어요`, 'share');
+      if (shared.length) {
+        textGuardians(w, `${state.me.name}님이 ${who.title}와(과) ${c.name}에서 산책을 시작했어요. 예정 종료 ${fmtTime(w.session.expectedEnd)}. 코스: ${mapLink(c.path[0], c.name)}`,
+          `${guardianNames(shared).join(', ')}님에게 산책 시작을 알렸어요`);
+      }
       closeModal();
       notify(`안심 산책을 시작했어요${shared.length ? ` · ${shared.length}명에게 위치 공유 중` : ''}`, { kind: 'safety', to: { name: 'live', id: w.id }, device: false });
       go('live', { id: w.id });
@@ -162,7 +176,7 @@ function renderLive() {
     if (!s.ended && w.session.alertedAt) {
       prompt = `<div class="live-alert">${icon('alert', 20)}<div class="grow"><b>지인에게 알림을 보냈어요</b><span>괜찮다면 "괜찮아요"를 눌러 안심 메시지를 보내주세요.</span></div><button class="btn sm accent" data-act="ok">괜찮아요</button></div>`;
     } else if (s.overdue) {
-      prompt = `<div class="live-alert">${icon('clock', 20)}<div class="grow"><b>예정 시간이 ${Math.ceil(s.overdueMin)}분 지났어요</b><span>${Math.ceil(s.alertInMin)}분 뒤 공유한 분들에게 자동으로 알려요.</span></div><button class="btn sm accent" data-act="extend">15분 연장</button></div>`;
+      prompt = `<div class="live-alert">${icon('clock', 20)}<div class="grow"><b>예정 시간이 ${Math.ceil(s.overdueMin)}분 지났어요</b><span>${Math.ceil(s.alertInMin)}분 뒤 공유한 분들에게 자동으로 알려요.</span></div><button class="btn sm accent" data-act="extend">${RULES.extendMin}분 연장</button></div>`;
     } else if (s.needCheckin) {
       prompt = `<div class="live-check">${icon('shield', 20)}<div class="grow"><b>괜찮으신가요?</b><span>체크인하면 공유한 분들에게 안심 메시지가 가요.</span></div><button class="btn sm accent" data-act="checkin">괜찮아요</button></div>`;
     }
@@ -175,11 +189,11 @@ function renderLive() {
            <button class="btn soft" data-act="checkin">${icon('check', 18)}체크인</button>
            <button class="btn outline" data-act="end">${icon('stop', 16)}산책 종료</button>
          </div>
-         <button class="btn text small" data-act="skip">데모: 10분 앞으로 감기</button>`;
+         ${isDemo() ? '<button class="btn text small" data-act="skip">데모: 10분 앞으로 감기</button>' : ''}`;
 
     const names = guardianNames(w.session.sharedWith);
     $('#liveShare').innerHTML = names.length
-      ? `<div class="share-card">${icon('link', 18)}<div class="grow"><b>${names.join(', ')}님이 내 위치를 보고 있어요</b><span>${SHARE_BASE}${w.session.shareCode}</span></div><button class="btn sm soft" data-act="copy">복사</button></div>`
+      ? `<div class="share-card">${icon('link', 18)}<div class="grow"><b>${names.join(', ')}님에게 산책 소식을 알려요</b><span>시작 · 체크인 · 예정 시간 초과 · 종료 때 문자가 가요. 현재 위치 지도 링크를 복사해 따로 보낼 수도 있어요.</span></div><button class="btn sm soft" data-act="copy">위치 복사</button></div>`
       : `<div class="hidden-note" style="margin:0">${icon('user', 16)}<span>공유 중인 사람이 없어요</span><button data-act="guardians">연락처 등록</button></div>`;
 
     $('#liveEvents').innerHTML = w.session.events.map((e) => `<li class="ev-${e.kind}"><span class="t">${fmtTime(e.at)}</span>${esc(e.text)}</li>`).join('');
@@ -192,12 +206,13 @@ function renderLive() {
     if (act === 'checkin' || act === 'ok') {
       w.session.checkins.push(now);
       if (act === 'ok') w.session.alertedAt = null;
-      logEvent(w, `체크인: 괜찮아요${w.session.sharedWith.length ? ' (공유한 분들에게 안심 메시지 전송)' : ''}`, 'check');
+      logEvent(w, '체크인: 괜찮아요', 'check');
+      textGuardians(w, `${state.me.name}님이 산책 중 '괜찮아요' 체크인을 했어요.`, '공유한 분들에게 안심 문자를 보냈어요', 'check');
       toast('체크인했어요');
     } else if (act === 'extend') {
-      w.session.expectedEnd += 15 * 60000;
+      w.session.expectedEnd += RULES.extendMin * 60000;
       w.session.checkins.push(now);
-      logEvent(w, `예정 종료를 15분 늦췄어요 (${fmtTime(w.session.expectedEnd)})`, 'check');
+      logEvent(w, `예정 종료를 ${RULES.extendMin}분 늦췄어요 (${fmtTime(w.session.expectedEnd)})`, 'check');
     } else if (act === 'end') {
       if (!confirm('산책을 종료할까요?')) return;
       endWalk(w);
@@ -209,7 +224,8 @@ function renderLive() {
       save();
       tickSessions(Date.now());
     } else if (act === 'copy') {
-      navigator.clipboard?.writeText(`${SHARE_BASE}${w.session.shareCode}`).then(() => toast('링크를 복사했어요'), () => toast('복사하지 못했어요'));
+      const here = positionAlongPath(c.path, statusOf(w).progress);
+      navigator.clipboard?.writeText(mapLink(here)).then(() => toast('현재 위치 지도 링크를 복사했어요'), () => toast('복사하지 못했어요'));
     } else if (act === 'guardians') {
       openGuardians(() => renderLive());
     } else if (act === 'close') {
@@ -229,7 +245,8 @@ export function endWalk(w) {
   const now = Date.now() + (w.session.offsetMs || 0);
   w.session.endedAt = now;
   w.completedAt = now;
-  logEvent(w, `산책을 마쳤어요${w.session.sharedWith.length ? ' · 공유한 분들에게 안전 귀가 알림 전송' : ''}`, 'end');
+  logEvent(w, '산책을 마쳤어요', 'end');
+  textGuardians(w, `${state.me.name}님이 산책을 안전하게 마쳤어요.`, '공유한 분들에게 안전 귀가 문자를 보냈어요', 'end');
   save();
   notify('안심 산책을 마쳤어요. 오늘 산책은 어땠나요?', { kind: 'safety', to: { name: 'walks' }, device: false });
   walkEndedHandlers.forEach((fn) => fn(w));
@@ -244,7 +261,7 @@ function openSOS(w) {
   const s = statusOf(w);
   const here = positionAlongPath(c.path, s.progress);
   const phones = state.guardians.filter((g) => w.session.sharedWith.includes(g.id)).map((g) => g.phone.replace(/-/g, ''));
-  const body = encodeURIComponent(`[같이걸을개 긴급] 도움이 필요해요. 현재 위치: ${c.name} 부근 (${here.lat.toFixed(5)}, ${here.lng.toFixed(5)}) ${SHARE_BASE}${w.session.shareCode}`);
+  const body = encodeURIComponent(`[같이걸을개 긴급] 도움이 필요해요. 현재 위치: ${c.name} 부근 ${mapLink(here)}`);
   const near = c.pois.filter((p) => p.type !== 'cctv')
     .map((p) => ({ ...p, m: Math.round(distanceKm(here, p) * 1000) }))
     .sort((a, b) => a.m - b.m);
@@ -265,7 +282,12 @@ function openSOS(w) {
       const b = e.target.closest('[data-sos]'); if (!b) return;
       const kind = b.dataset.sos;
       if (kind === '112') logEvent(w, '112에 전화를 걸었어요', 'sos');
-      if (kind === 'sms') logEvent(w, '안심 연락처에 긴급 문자를 보냈어요', 'sos');
+      if (kind === 'sms' && services().sms) {
+        // 서버로 바로 보낸다 (실패하면 휴대폰 문자 앱으로)
+        e.preventDefault();
+        textGuardians(w, `[긴급] ${state.me.name}님이 도움을 요청했어요. 위치: ${c.name} 부근 ${mapLink(here)}`, '안심 연락처에 긴급 문자를 보냈어요', 'sos')
+          .then((ok) => { if (!ok) location.href = b.href; });
+      } else if (kind === 'sms') logEvent(w, '휴대폰 문자 앱으로 긴급 문자를 열었어요', 'sos');
       if (kind === 'loud') { playAlarm(); logEvent(w, '경보음을 울렸어요', 'sos'); }
       notify(kind === 'loud' ? '경보음을 울렸어요' : '긴급 요청을 보냈어요', { kind: 'alert', device: false });
     });
@@ -296,7 +318,11 @@ function tickSessions(nowReal) {
   if (s.shouldAlert) {
     w.session.alertedAt = s.now;
     const names = guardianNames(w.session.sharedWith);
-    logEvent(w, names.length ? `예정 시간이 지나 ${names.join(', ')}님에게 자동으로 알렸어요` : '예정 시간이 지났어요 (공유한 연락처 없음)', 'alert');
+    if (names.length) {
+      const c = course(w.courseId);
+      textGuardians(w, `${state.me.name}님의 산책이 예정 시간(${fmtTime(w.session.expectedEnd)})보다 ${Math.round(s.overdueMin)}분 길어지고 있어요. 연락해 보세요. 마지막 위치: ${mapLink(positionAlongPath(c.path, s.progress), c.name)}`,
+        `예정 시간이 지나 ${names.join(', ')}님에게 자동으로 알렸어요`, 'alert');
+    } else logEvent(w, '예정 시간이 지났어요 (공유한 연락처 없음)', 'alert');
     notify(names.length ? `산책이 예정보다 길어져 ${names.join(', ')}님에게 알렸어요` : '산책 예정 시간이 지났어요. 괜찮으신가요?', { kind: 'alert', to: { name: 'live', id: w.id } });
   } else if (s.needCheckin && w.session.checkinAskedAt !== Math.floor(s.elapsedMin / state.settings.checkinMin)) {
     w.session.checkinAskedAt = Math.floor(s.elapsedMin / state.settings.checkinMin);
